@@ -1,0 +1,98 @@
+name: Publish confirmed version
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect staged source archive
+        id: archive
+        shell: bash
+        run: |
+          if [[ -f .release/BiliQueue-v0.1.6-source.zip ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Unpack confirmed source
+        if: steps.archive.outputs.found == 'true'
+        shell: bash
+        run: |
+          cp .release/BiliQueue-v0.1.6-source.zip /tmp/BiliQueue-v0.1.6-source.zip
+          rm -rf /tmp/biliqueue-source
+          mkdir -p /tmp/biliqueue-source
+          unzip -q /tmp/BiliQueue-v0.1.6-source.zip -d /tmp/biliqueue-source
+          rsync -a --exclude README.md /tmp/biliqueue-source/biliqueue-v0.1.6/ ./
+          rm -rf .release
+
+      - name: Commit unpacked source
+        if: steps.archive.outputs.found == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish v0.1.6 source"
+            git push origin HEAD:main
+          fi
+
+      - name: Set up Go
+        if: steps.archive.outputs.found == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Test
+        if: steps.archive.outputs.found == 'true'
+        run: |
+          go test ./...
+          go vet ./...
+
+      - name: Build Windows package
+        if: steps.archive.outputs.found == 'true'
+        shell: bash
+        run: |
+          VERSION="$(cat VERSION)"
+          PACKAGE="BiliQueue-v${VERSION}-windows-test"
+          mkdir -p "dist/${PACKAGE}/data"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" .
+          cp "启动-BiliQueue.cmd" "dist/${PACKAGE}/"
+          cp README.md "dist/${PACKAGE}/README-使用说明.md"
+          touch "dist/${PACKAGE}/data/.gitkeep"
+          (cd dist && zip -qr "../${PACKAGE}.zip" "${PACKAGE}")
+          cp /tmp/BiliQueue-v0.1.6-source.zip "BiliQueue-v${VERSION}-source.zip"
+
+      - name: Create GitHub Release
+        if: steps.archive.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="$(cat VERSION)"
+          TAG="v${VERSION}"
+          WINDOWS_ASSET="BiliQueue-v${VERSION}-windows-test.zip"
+          SOURCE_ASSET="BiliQueue-v${VERSION}-source.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" --clobber
+          else
+            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" \
+              --target main \
+              --title "BiliQueue ${TAG}" \
+              --notes-file RELEASE_NOTES.md
+          fi
