@@ -18,26 +18,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect staged source archive
+      - name: Detect staged source chunks
         id: archive
         shell: bash
         run: |
-          if [[ -f .release/BiliQueue-v0.1.6-source.zip ]]; then
+          if compgen -G '.release/chunks/part-*' > /dev/null; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Unpack confirmed source
+      - name: Reconstruct and unpack confirmed source
         if: steps.archive.outputs.found == 'true'
         shell: bash
         run: |
-          cp .release/BiliQueue-v0.1.6-source.zip /tmp/BiliQueue-v0.1.6-source.zip
+          cat .release/chunks/part-* > /tmp/BiliQueue-v0.1.6-source.zip
+          echo "640e92ee14e9723029d14b2b981f4a669e9dc15553f86696752efde3e96345b3  /tmp/BiliQueue-v0.1.6-source.zip" | sha256sum -c -
           rm -rf /tmp/biliqueue-source
           mkdir -p /tmp/biliqueue-source
           unzip -q /tmp/BiliQueue-v0.1.6-source.zip -d /tmp/biliqueue-source
           rsync -a --exclude README.md /tmp/biliqueue-source/biliqueue-v0.1.6/ ./
-          rm -rf .release
+          rm -rf .release .release-trigger
 
       - name: Commit unpacked source
         if: steps.archive.outputs.found == 'true'
