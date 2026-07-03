@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BiliQueue 控制台</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>BiliQueue</h1>
+        <p>本机横向排队工具 · OBS 浏览器源</p>
+      </div>
+      <div id="statusPill" class="status-pill disconnected"><span class="status-dot"></span><span id="statusText">未连接</span></div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <article class="card">
+          <div class="card-header"><h2>直播间连接</h2><span id="versionLabel"></span></div>
+          <div class="card-body">
+            <div class="login-panel">
+              <div>
+                <span class="login-label">B站账号</span>
+                <strong id="loginText">尚未登录</strong>
+                <small id="loginDetail">连接弹幕前需要扫码登录，凭证只保存在本机。</small>
+              </div>
+              <div class="row wrap">
+                <button id="loginBtn" class="btn primary">扫码登录</button>
+                <button id="logoutBtn" class="btn ghost">退出登录</button>
+              </div>
+            </div>
+            <div class="row wrap">
+              <input id="roomId" class="room-input" inputmode="numeric" placeholder="输入 B 站直播间号">
+              <button id="connectBtn" class="btn primary">连接</button>
+              <button id="disconnectBtn" class="btn ghost">断开</button>
+            </div>
+            <div class="meta">
+              <div class="meta-box"><span>真实房间号</span><strong id="realRoomId">—</strong></div>
+              <div class="meta-box"><span>主播</span><strong id="anchorName">—</strong></div>
+              <div class="meta-box"><span>直播标题</span><strong id="roomTitle">—</strong></div>
+            </div>
+            <div id="connectionDetail" class="log-box">未连接</div>
+          </div>
+        </article>
+
+        <article class="card" style="margin-top:18px">
+          <div class="card-header"><h2>队列管理</h2><span id="queueCount">0 人</span></div>
+          <div class="card-body">
+            <div id="currentCard" class="current-card"></div>
+            <div class="toolbar">
+              <button id="nextBtn" class="btn primary">下一位</button>
+              <button id="skipBtn" class="btn">移到队尾</button>
+              <button id="pauseBtn" class="btn">暂停排队</button>
+              <button id="clearBtn" class="btn danger">清空队列</button>
+              <button id="endBtn" class="btn ghost">结束本场</button>
+            </div>
+            <div class="row" style="margin-bottom:14px">
+              <input id="manualName" class="room-input" placeholder="手动添加用户名">
+              <button id="manualBtn" class="btn">添加</button>
+            </div>
+            <div id="queueList" class="queue-list"></div>
+            <div class="divider"></div>
+            <div class="row wrap">
+              <button id="mockJoinBtn" class="btn small">模拟“排队”</button>
+              <button id="mockCancelBtn" class="btn small">模拟“取消排队”</button>
+              <button id="mockGiftBtn" class="btn small gift">模拟礼物插队</button>
+              <span class="muted-hint">用于检查控制台和 OBS 显示</span>
+            </div>
+            <div id="lastMessage" class="log-box">尚未收到弹幕</div>
+            <div id="lastGift" class="log-box gift-log">尚未收到礼物</div>
+          </div>
+        </article>
+      </section>
+
+      <section>
+        <article class="card">
+          <div class="card-header"><h2>排队与礼物规则</h2></div>
+          <div class="card-body">
+            <div class="settings-grid">
+              <div class="field"><label>加入指令</label><input id="joinCommand" type="text"></div>
+              <div class="field"><label>取消指令</label><input id="cancelCommand" type="text"></div>
+              <div class="field"><label>最大人数</label><input id="maxQueue" type="number" min="1" max="1000"></div>
+              <div class="field"><label>礼物门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
+            </div>
+            <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
+            <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物价值大的排在礼物价值小的前面</label>
+            <p class="setting-note">只判断单次付费礼物总价值，不累计。关闭价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
+          </div>
+        </article>
+
+        <article class="card" style="margin-top:18px">
+          <div class="card-header"><h2>配置文件</h2></div>
+          <div class="card-body">
+            <div class="row wrap">
+              <button id="exportConfigBtn" class="btn primary">导出配置</button>
+              <button id="importConfigBtn" class="btn">导入配置</button>
+              <input id="importConfigFile" type="file" accept="application/json,.json" hidden>
+            </div>
+            <p class="setting-note">导出内容包含直播间号、排队规则和全部横条样式。不会导出 B站登录凭证、当前队列、头像缓存或最近事件。导入前会在 data/backups 中自动备份当前配置。</p>
+          </div>
+        </article>
+
+        <article class="card" style="margin-top:18px">
+          <div class="card-header"><h2>OBS 横条设置</h2><button id="resetStyleBtn" class="btn small ghost">恢复默认</button></div>
+          <div class="card-body">
+            <div class="settings-grid">
+              <div class="field"><label>滚动模式</label><select id="scrollMode"><option value="continuous">连续滚动</option><option value="paged">分页滑动</option></select></div>
+              <div class="field"><label>短队列对齐</label><select id="shortAlign"><option value="left">靠左</option><option value="center">居中</option></select></div>
+
+              <div class="field"><label>横条统一高度</label><div class="range-line"><input id="height" type="range" min="64" max="320"><div class="value-box"><input id="heightValue" type="number" min="64" max="320"><span>px</span></div></div></div>
+              <div class="field"><label>滚动速度</label><div class="range-line"><input id="speed" type="range" min="0" max="200" step="1"><div class="value-box"><input id="speedValue" type="number" min="0" max="200" step="1"><span>px/s</span></div></div></div>
+              <div class="field"><label>背景透明度</label><div class="range-line"><input id="opacity" type="range" min="0" max="100"><div class="value-box"><input id="opacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>圆角</label><div class="range-line"><input id="radius" type="range" min="0" max="80"><div class="value-box"><input id="radiusValue" type="number" min="0" max="80"><span>px</span></div></div></div>
+              <div class="field"><label>背景颜色</label><input id="background" type="color"></div>
+
+              <div class="field"><label>当前区域宽度</label><div class="range-line"><input id="currentWidth" type="range" min="160" max="800"><div class="value-box"><input id="currentWidthValue" type="number" min="160" max="800"><span>px</span></div></div></div>
+              <div class="field"><label>队列区域宽度</label><div class="range-line"><input id="queueWidth" type="range" min="320" max="2400"><div class="value-box"><input id="queueWidthValue" type="number" min="320" max="2400"><span>px</span></div></div></div>
+              <div class="field"><label>右侧说明区域宽度</label><div class="range-line"><input id="infoWidth" type="range" min="180" max="1000"><div class="value-box"><input id="infoWidthValue" type="number" min="180" max="1000"><span>px</span></div></div></div>
+              <div class="field"><label>双行触发人数</label><div class="range-line"><input id="doubleLineThreshold" type="range" min="1" max="50"><div class="value-box"><input id="doubleLineThresholdValue" type="number" min="1" max="50"><span>人</span></div></div></div>
+              <div class="field"><label>队列双行行间距</label><div class="range-line"><input id="queueLineGap" type="range" min="0" max="60"><div class="value-box"><input id="queueLineGapValue" type="number" min="0" max="60"><span>px</span></div></div></div>
+              <div class="field"><label>说明文字行间距</label><div class="range-line"><input id="infoLineGap" type="range" min="0" max="30"><div class="value-box"><input id="infoLineGapValue" type="number" min="0" max="30"><span>px</span></div></div></div>
+            </div>
+
+            <div class="style-section">
+              <h3>当前区域文字样式</h3>
+              <div class="settings-grid">
+                <div class="field"><label>字号</label><div class="range-line"><input id="currentFontSize" type="range" min="12" max="72"><div class="value-box"><input id="currentFontSizeValue" type="number" min="12" max="72"><span>px</span></div></div></div>
+                <div class="field"><label>颜色</label><input id="currentTextColor" type="color"></div>
+                <div class="field"><label>字重</label><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+                <div class="field"><label>文字对齐</label><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
+              </div>
+              <div class="field"><label>无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
+            </div>
+
+            <div class="style-section">
+              <h3>队列区域文字样式</h3>
+              <div class="settings-grid">
+                <div class="field"><label>字号</label><div class="range-line"><input id="queueFontSize" type="range" min="12" max="72"><div class="value-box"><input id="queueFontSizeValue" type="number" min="12" max="72"><span>px</span></div></div></div>
+                <div class="field"><label>颜色</label><input id="queueTextColor" type="color"></div>
+                <div class="field"><label>字重</label><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+              </div>
+              <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
+            </div>
+
+            <div class="style-section">
+              <h3>说明区域文字样式</h3>
+              <div class="settings-grid">
+                <div class="field"><label>字号</label><div class="range-line"><input id="infoFontSize" type="range" min="10" max="60"><div class="value-box"><input id="infoFontSizeValue" type="number" min="10" max="60"><span>px</span></div></div></div>
+                <div class="field"><label>颜色</label><input id="infoTextColor" type="color"></div>
+                <div class="field"><label>字重</label><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+                <div class="field"><label>文字对齐</label><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
+              </div>
+              <div class="field"><label>右侧说明内容（第一行队列数由程序生成，使用相同文字样式）</label><textarea id="infoText" rows="4" placeholder="第二行开始自由编辑，支持手动换行和自动换行"></textarea></div>
+            </div>
+
+            <label class="checkbox-row"><input id="showAvatar" type="checkbox">显示用户头像</label>
+            <label class="checkbox-row"><input id="showGiftIcon" type="checkbox">显示送出的礼物图标</label>
+            <label class="checkbox-row"><input id="showCount" type="checkbox">显示第一行队列人数</label>
+            <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
+
+            <div class="preview-wrap"><iframe id="previewFrame" src="/overlay?preview=1"></iframe></div>
+            <div class="divider"></div>
+            <div class="field">
+              <label>OBS 浏览器源地址</label>
+              <div id="obsUrl" class="obs-url"></div>
+            </div>
+            <div class="row wrap">
+              <button id="copyUrlBtn" class="btn primary">复制地址</button>
+              <button id="openOverlayBtn" class="btn">单独打开</button>
+            </div>
+            <p id="obsSizeHint" class="setting-note"></p>
+          </div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <div id="qrModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>B站扫码登录</h2><button id="closeQrBtn" class="btn small ghost">关闭</button></div>
+      <div class="qr-wrap"><canvas id="qrCanvas" width="240" height="240"></canvas></div>
+      <p id="qrStatus">请使用哔哩哔哩手机客户端扫码并确认。</p>
+      <button id="refreshQrBtn" class="btn">刷新二维码</button>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="/assets/qrcode-bundle.js"></script>
+  <script src="/assets/control.js"></script>
+</body>
+</html>

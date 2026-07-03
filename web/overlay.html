@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BiliQueue Overlay</title>
+  <link rel="stylesheet" href="/assets/overlay.css">
+</head>
+<body>
+  <div id="bar" class="bar">
+    <section id="current" class="fixed current"></section>
+    <section id="viewport" class="viewport">
+      <div id="singleRow" class="queue-row single-row"><div id="singleTrack" class="track"></div></div>
+      <div id="doubleRows" class="double-rows">
+        <div id="fixedRow" class="fixed-row"></div>
+        <div id="scrollRow" class="queue-row scroll-row"><div id="scrollTrack" class="track"></div></div>
+      </div>
+    </section>
+    <section id="info" class="fixed info"></section>
+  </div>
+  <script src="/assets/overlay.js"></script>
+</body>
+</html>
