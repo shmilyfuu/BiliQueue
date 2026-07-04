@@ -7,6 +7,9 @@ let mockCounter = 1;
 let qrPollTimer = null;
 let qrKey = null;
 let fontFiles = [];
+let textDraftDirty = false;
+
+const deferredTextIds = ['emptyText', 'queueEmptyText', 'infoText'];
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
@@ -94,6 +97,22 @@ function toast(message) {
   node.classList.add('show');
   clearTimeout(node._timer);
   node._timer = setTimeout(() => node.classList.remove('show'), 1800);
+}
+
+function updateTextDraftStatus() {
+  const node = $('textDraftStatus');
+  if (!node) return;
+  node.textContent = textDraftDirty ? '有未应用修改' : '已同步';
+  node.className = `draft-status ${textDraftDirty ? 'dirty' : 'synced'}`;
+  const applyBtn = $('applyTextBtn');
+  const discardBtn = $('discardTextBtn');
+  if (applyBtn) applyBtn.disabled = !textDraftDirty;
+  if (discardBtn) discardBtn.disabled = !textDraftDirty;
+}
+
+function markTextDraftDirty() {
+  textDraftDirty = true;
+  updateTextDraftStatus();
 }
 
 function avatarHTML(user) {
@@ -291,9 +310,6 @@ function fillSettings(cfg, force) {
     background:o.background,
     scrollMode:o.scrollMode,
     shortAlign:o.shortAlign,
-    emptyText:o.emptyText,
-    queueEmptyText:o.queueEmptyText,
-    infoText:o.infoText,
     currentTextColor:o.currentTextColor,
     currentFontFile:o.currentFontFile,
     currentFontWeight:o.currentFontWeight,
@@ -313,6 +329,18 @@ function fillSettings(cfg, force) {
     const node = $(id);
     if (force || document.activeElement !== node) node.value = value ?? '';
   }
+
+  const textValues = {
+    emptyText:o.emptyText,
+    queueEmptyText:o.queueEmptyText,
+    infoText:o.infoText,
+  };
+  for (const [id, value] of Object.entries(textValues)) {
+    const node = $(id);
+    if (force || (!textDraftDirty && document.activeElement !== node)) node.value = value ?? '';
+  }
+  updateTextDraftStatus();
+
   if (fontFiles.length || o.currentFontFile || o.queueFontFile || o.infoFontFile) {
     if (force || document.activeElement !== $('currentFontFile')) fillFontSelect('currentFontFile', o.currentFontFile);
     if (force || document.activeElement !== $('queueFontFile')) fillFontSelect('queueFontFile', o.queueFontFile);
@@ -333,7 +361,9 @@ function clampNumber(node) {
   return value;
 }
 
-function collectConfig() {
+function collectConfig(options = {}) {
+  const includeTextDrafts = Boolean(options.includeTextDrafts);
+  const currentOverlay = state?.config?.overlay || {};
   return {
     schemaVersion: 7,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
@@ -391,9 +421,9 @@ function collectConfig() {
       queueLineGap: Number($('queueLineGap').value),
       infoLineGap: Number($('infoLineGap').value),
       doubleLineThreshold: Number($('doubleLineThreshold').value),
-      infoText: $('infoText').value,
-      emptyText: $('emptyText').value.trim() || '排队空闲中',
-      queueEmptyText: $('queueEmptyText').value.trim() || '空',
+      infoText: includeTextDrafts ? $('infoText').value : (currentOverlay.infoText ?? $('infoText').value),
+      emptyText: includeTextDrafts ? ($('emptyText').value.trim() || '排队空闲中') : ((currentOverlay.emptyText ?? $('emptyText').value.trim()) || '排队空闲中'),
+      queueEmptyText: includeTextDrafts ? ($('queueEmptyText').value.trim() || '空') : ((currentOverlay.queueEmptyText ?? $('queueEmptyText').value.trim()) || '空'),
     },
   };
 }
@@ -408,7 +438,7 @@ function scheduleSave() {
   updateSizeHint();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    try { await api('/api/config', {body:collectConfig()}); } catch (err) { toast(err.message); }
+    try { await api('/api/config', {body:collectConfig({includeTextDrafts:false})}); } catch (err) { toast(err.message); }
   }, 180);
 }
 
@@ -523,7 +553,9 @@ async function importConfigFile(file) {
     throw new Error('配置文件不是有效的 JSON');
   }
   const result = await api('/api/config/import', {body: parsed});
+  textDraftDirty = false;
   if (result.state) render(result.state);
+  updateTextDraftStatus();
   toast(`配置已导入，旧配置已备份为 ${result.backupFile || '备份文件'}`);
 }
 
@@ -586,9 +618,29 @@ async function init() {
     await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
   });
 
-  const settingIds = ['joinCommand','cancelCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','emptyText','queueEmptyText','infoText','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
+  const settingIds = ['joinCommand','cancelCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
   settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
   settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
+  deferredTextIds.forEach(id => $(id).addEventListener('input', markTextDraftDirty));
+  $('applyTextBtn').addEventListener('click', async () => {
+    clearTimeout(saveTimer);
+    try {
+      const result = await api('/api/config', {body:collectConfig({includeTextDrafts:true})});
+      textDraftDirty = false;
+      if (result) render(result);
+      updateTextDraftStatus();
+      toast('文字已应用到横条');
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  $('discardTextBtn').addEventListener('click', () => {
+    textDraftDirty = false;
+    if (state?.config) fillSettings(state.config, true);
+    updateTextDraftStatus();
+    toast('已放弃未应用文字修改');
+  });
+  updateTextDraftStatus();
   $('refreshFontsBtn').addEventListener('click', async () => {
     await loadFontOptions(true);
     $('previewFrame').contentWindow.location.reload();

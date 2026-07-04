@@ -30,19 +30,16 @@ jobs:
           VERSION="$(cat VERSION)"
           PACKAGE="BiliQueue-v${VERSION}-windows-test"
           SOURCE_PACKAGE="BiliQueue-v${VERSION}-source.zip"
-          mkdir -p "dist/${PACKAGE}/data" "dist/${PACKAGE}/fonts"
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" .
-          cp "启动-BiliQueue.cmd" "dist/${PACKAGE}/"
-          cp README.md "dist/${PACKAGE}/README-使用说明.md"
+          mkdir -p "dist/${PACKAGE}/data" "dist/${PACKAGE}/fonts" "dist/${PACKAGE}/assets"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-H=windowsgui -s -w" -o "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" .
+          python3 tools/embed_icon_pe.py "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" assets/biliqueue.ico "dist/${PACKAGE}/BiliQueue-windows-amd64-icon.exe"
+          mv "dist/${PACKAGE}/BiliQueue-windows-amd64-icon.exe" "dist/${PACKAGE}/BiliQueue-windows-amd64.exe"
+          cp "start-BiliQueue.cmd" "dist/${PACKAGE}/"
+          cp README.md "dist/${PACKAGE}/README.md"
+          cp -a assets/. "dist/${PACKAGE}/assets/"
           touch "dist/${PACKAGE}/data/.gitkeep" "dist/${PACKAGE}/fonts/.gitkeep"
           (cd dist && zip -qr "../${PACKAGE}.zip" "${PACKAGE}")
-          zip -qr "${SOURCE_PACKAGE}" . \
-            -x '.git/*' \
-            -x 'dist/*' \
-            -x '*.exe' \
-            -x '*.zip' \
-            -x 'data/*' \
-            -x 'fonts/*'
+          zip -qr "${SOURCE_PACKAGE}" .             -x '.git/*'             -x 'dist/*'             -x 'build/*'             -x '*.exe'             -x '*.zip'             -x 'data/logs/*'             -x 'data/auth.json'             -x 'data/config.json'             -x 'data/queue-today.json'             -x 'data/avatars/*'             -x 'data/backups/*'             -x 'fonts/*.ttf'             -x 'fonts/*.otf'             -x 'fonts/*.woff'             -x 'fonts/*.woff2'
 
       - name: Create GitHub Release
         env:
@@ -56,8 +53,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" --clobber
           else
-            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" \
-              --target main \
-              --title "BiliQueue ${TAG}" \
-              --notes-file RELEASE_NOTES.md
+            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET"               --target main               --title "BiliQueue ${TAG}"               --notes-file RELEASE_NOTES.md
           fi

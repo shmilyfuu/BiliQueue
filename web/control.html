@@ -91,7 +91,27 @@
       </section>
 
       <section>
-        <article class="card">
+        <article class="card text-editor-card">
+          <div class="card-header"><h2>横条文字内容</h2><span id="textDraftStatus" class="draft-status synced">已同步</span></div>
+          <div class="card-body">
+            <div class="field"><label>当前区域无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
+            <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
+            <div class="field"><label>右侧说明内容（第一行队列数由程序生成，使用相同文字样式）</label><textarea id="infoText" rows="5" placeholder="第二行开始自由编辑，支持手动换行和自动换行"></textarea></div>
+            <div class="text-editor-options">
+              <label class="checkbox-row"><input id="showCount" type="checkbox">显示第一行队列人数</label>
+              <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
+            </div>
+            <div class="text-editor-actions">
+              <span class="setting-note">文字编辑不会实时同步。确认内容后点击应用。</span>
+              <div class="row wrap">
+                <button id="applyTextBtn" class="btn primary">应用文字到横条</button>
+                <button id="discardTextBtn" class="btn ghost">放弃未应用修改</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card" style="margin-top:18px">
           <div class="card-header"><h2>排队与礼物规则</h2></div>
           <div class="card-body">
             <div class="settings-grid">
@@ -161,7 +181,6 @@
                 <div class="field"><label>区域背景颜色</label><input id="currentBackground" type="color"></div>
                 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="currentBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="currentBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
-              <div class="field"><label>无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
             </div>
 
             <div class="style-section">
@@ -175,7 +194,6 @@
                 <div class="field"><label>区域背景颜色</label><input id="queueBackground" type="color"></div>
                 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="queueBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="queueBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
-              <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
             </div>
 
             <div class="style-section">
@@ -190,13 +208,10 @@
                 <div class="field"><label>区域背景颜色</label><input id="infoBackground" type="color"></div>
                 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="infoBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="infoBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
-              <div class="field"><label>右侧说明内容（第一行队列数由程序生成，使用相同文字样式）</label><textarea id="infoText" rows="4" placeholder="第二行开始自由编辑，支持手动换行和自动换行"></textarea></div>
             </div>
 
             <label class="checkbox-row"><input id="showAvatar" type="checkbox">显示用户头像</label>
             <label class="checkbox-row"><input id="showGiftIcon" type="checkbox">显示送出的礼物图标</label>
-            <label class="checkbox-row"><input id="showCount" type="checkbox">显示第一行队列人数</label>
-            <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
 
           </div>
         </article>

@@ -161,3 +161,15 @@ button { cursor: pointer; }
   .queue-item { grid-template-columns:20px 30px minmax(0,1fr); }
   .queue-actions { grid-column:3; flex-wrap:wrap; }
 }
+
+/* v0.1.11-test5 横条文字内容前置与手动同步 */
+.text-editor-card textarea { min-height: 74px; }
+.text-editor-card #infoText { min-height: 118px; }
+.draft-status { font-size: 12px; padding: 5px 9px; border-radius: 999px; border: 1px solid #394356; color: #aeb6c8; background: #111722; white-space: nowrap; }
+.draft-status.synced { color: #9bd9b3; border-color: rgba(95, 177, 124, .38); background: rgba(55, 132, 84, .14); }
+.draft-status.dirty { color: #f1cb83; border-color: rgba(221, 166, 70, .42); background: rgba(127, 89, 24, .18); }
+.text-editor-options { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 12px; }
+.text-editor-options .checkbox-row { margin: 0; }
+.text-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid #303644; }
+.text-editor-actions .setting-note { margin: 0; }
+@media (max-width: 650px) { .text-editor-actions { align-items: flex-start; flex-direction: column; } }

@@ -12,11 +12,13 @@ fonts/*
 dist/
 build/
 
-# 临时文件
+# 临时文件和日志
 *.log
 *.tmp
 .DS_Store
 Thumbs.db
+.release/
+.release-trigger
 
 # 编辑器
 .vscode/

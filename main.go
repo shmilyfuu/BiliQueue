@@ -162,7 +162,7 @@ type App struct {
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.10"
+const version = "0.1.11"
 
 func defaultConfig() Config {
 	return Config{
@@ -341,6 +341,14 @@ func (a *App) saveQueue() {
 	if err := writeJSONAtomic(a.queuePath(), snap); err != nil {
 		log.Printf("save queue: %v", err)
 	}
+}
+
+func (a *App) clearQueue() {
+	a.mu.Lock()
+	a.queue = nil
+	a.mu.Unlock()
+	a.saveQueue()
+	a.broadcast()
 }
 
 func (a *App) loadConfig() {
@@ -1226,11 +1234,7 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		a.mu.Lock()
-		a.queue = nil
-		a.mu.Unlock()
-		a.saveQueue()
-		a.broadcast()
+		a.clearQueue()
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -1370,17 +1374,42 @@ func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func freshOpenURL(raw string) string {
+	separator := "?"
+	if strings.Contains(raw, "?") {
+		separator = "&"
+	}
+	return raw + separator + "_open=" + strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+
 func openBrowser(url string) error {
+	log.Printf("open browser: %s", url)
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = windowsOpenBrowserCmd(url)
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
+}
+
+func setupLogging(dataDir string) *os.File {
+	logDir := filepath.Join(dataDir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		log.Printf("create log dir: %v", err)
+		return nil
+	}
+	path := filepath.Join(logDir, "biliqueue.log")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		log.Printf("open log file: %v", err)
+		return nil
+	}
+	log.SetOutput(io.MultiWriter(file, os.Stderr))
+	return file
 }
 
 func main() {
@@ -1390,8 +1419,15 @@ func main() {
 	}
 	listen := flag.String("listen", "127.0.0.1:18303", "HTTP listen address")
 	dataDir := flag.String("data", defaultDataDir, "data directory")
-	noBrowser := flag.Bool("no-browser", false, "do not open the control page")
+	openBrowserOnStart := flag.Bool("open-browser", false, "open the control page on startup")
+	noBrowser := flag.Bool("no-browser", false, "do not open the control page; kept for compatibility")
+	noTray := flag.Bool("no-tray", false, "disable the Windows system tray menu")
 	flag.Parse()
+
+	logFile := setupLogging(*dataDir)
+	if logFile != nil {
+		defer logFile.Close()
+	}
 
 	app := newApp(*dataDir)
 	server := &http.Server{
@@ -1400,19 +1436,53 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	url := "http://" + *listen + "/control"
+	controlURL := "http://" + *listen + "/control"
+	overlayURL := "http://" + *listen + "/overlay"
 	log.Printf("BiliQueue %s", version)
-	log.Printf("control: %s", url)
-	log.Printf("overlay: http://%s/overlay", *listen)
-	if !*noBrowser {
+	log.Printf("control: %s", controlURL)
+	log.Printf("overlay: %s", overlayURL)
+
+	if *openBrowserOnStart && !*noBrowser {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
-			if err := openBrowser(url); err != nil {
+			if err := openBrowser(controlURL); err != nil {
 				log.Printf("open browser: %v", err)
 			}
 		}()
 	}
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	if runtime.GOOS == "windows" && !*noTray {
+		select {
+		case err := <-serverErr:
+			if err != nil {
+				log.Printf("server start failed: %v", err)
+				showErrorDialog("BiliQueue 启动失败", err.Error())
+				os.Exit(1)
+			}
+		case <-time.After(250 * time.Millisecond):
+		}
+		if err := runTray(app, controlURL, overlayURL, *dataDir, server); err != nil {
+			log.Printf("tray: %v", err)
+			showErrorDialog("BiliQueue 托盘启动失败", err.Error())
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+		return
+	}
+
+	if err := <-serverErr; err != nil {
+		log.Printf("server: %v", err)
+		showErrorDialog("BiliQueue 启动失败", err.Error())
+		os.Exit(1)
 	}
 }
