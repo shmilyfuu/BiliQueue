@@ -16,6 +16,21 @@
       <div id="statusPill" class="status-pill disconnected"><span class="status-dot"></span><span id="statusText">未连接</span></div>
     </header>
 
+    <section class="preview-dock" aria-label="OBS 横条预览与地址">
+      <div class="preview-toolbar">
+        <div class="preview-address">
+          <span class="preview-label">OBS 浏览器源地址</span>
+          <div id="obsUrl" class="obs-url compact"></div>
+        </div>
+        <div class="preview-actions">
+          <span id="obsSizeHint" class="setting-note"></span>
+          <button id="copyUrlBtn" class="btn primary">复制地址</button>
+          <button id="openOverlayBtn" class="btn">单独打开</button>
+        </div>
+      </div>
+      <div class="preview-wrap"><iframe id="previewFrame" src="/overlay?preview=1" title="OBS 横条实时预览"></iframe></div>
+    </section>
+
     <div class="grid">
       <section>
         <article class="card">
@@ -112,9 +127,13 @@
 
               <div class="field"><label>横条统一高度</label><div class="range-line"><input id="height" type="range" min="64" max="320"><div class="value-box"><input id="heightValue" type="number" min="64" max="320"><span>px</span></div></div></div>
               <div class="field"><label>滚动速度</label><div class="range-line"><input id="speed" type="range" min="0" max="200" step="1"><div class="value-box"><input id="speedValue" type="number" min="0" max="200" step="1"><span>px/s</span></div></div></div>
-              <div class="field"><label>背景透明度</label><div class="range-line"><input id="opacity" type="range" min="0" max="100"><div class="value-box"><input id="opacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>全局背景颜色</label><input id="background" type="color"></div>
+              <div class="field"><label>顶部透明度</label><div class="range-line"><input id="gradientTopOpacity" type="range" min="0" max="100"><div class="value-box"><input id="gradientTopOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>底部透明度</label><div class="range-line"><input id="gradientBottomOpacity" type="range" min="0" max="100"><div class="value-box"><input id="gradientBottomOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>渐变开始位置</label><div class="range-line"><input id="gradientStart" type="range" min="0" max="100"><div class="value-box"><input id="gradientStartValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>渐变结束位置</label><div class="range-line"><input id="gradientEnd" type="range" min="0" max="100"><div class="value-box"><input id="gradientEndValue" type="number" min="0" max="100"><span>%</span></div></div></div>
+              <div class="field"><label>头像大小</label><div class="range-line"><input id="avatarSize" type="range" min="12" max="96"><div class="value-box"><input id="avatarSizeValue" type="number" min="12" max="96"><span>px</span></div></div></div>
               <div class="field"><label>圆角</label><div class="range-line"><input id="radius" type="range" min="0" max="80"><div class="value-box"><input id="radiusValue" type="number" min="0" max="80"><span>px</span></div></div></div>
-              <div class="field"><label>背景颜色</label><input id="background" type="color"></div>
 
               <div class="field"><label>当前区域宽度</label><div class="range-line"><input id="currentWidth" type="range" min="160" max="800"><div class="value-box"><input id="currentWidthValue" type="number" min="160" max="800"><span>px</span></div></div></div>
               <div class="field"><label>队列区域宽度</label><div class="range-line"><input id="queueWidth" type="range" min="320" max="2400"><div class="value-box"><input id="queueWidthValue" type="number" min="320" max="2400"><span>px</span></div></div></div>
@@ -123,35 +142,53 @@
               <div class="field"><label>队列双行行间距</label><div class="range-line"><input id="queueLineGap" type="range" min="0" max="60"><div class="value-box"><input id="queueLineGapValue" type="number" min="0" max="60"><span>px</span></div></div></div>
               <div class="field"><label>说明文字行间距</label><div class="range-line"><input id="infoLineGap" type="range" min="0" max="30"><div class="value-box"><input id="infoLineGapValue" type="number" min="0" max="30"><span>px</span></div></div></div>
             </div>
+            <p class="setting-note">透明度沿用现有控制方式：0% 完全透明，100% 完全显示。顶部与底部数值不同即形成全局纵向渐变。开始位置前保持顶部透明度，结束位置后保持底部透明度。</p>
+
+            <div class="font-library-row">
+              <div><strong>字体文件夹</strong><span>程序目录 / fonts，仅识别 ttf、otf、woff、woff2</span></div>
+              <div class="row wrap"><span id="fontStatus" class="muted-hint">正在读取字体…</span><button id="refreshFontsBtn" class="btn small">刷新字体列表</button></div>
+            </div>
 
             <div class="style-section">
-              <h3>当前区域文字样式</h3>
+              <h3>当前区域文字与背景</h3>
               <div class="settings-grid">
+                <div class="field"><label>字体</label><select id="currentFontFile" class="font-select"><option value="">默认字体</option></select></div>
                 <div class="field"><label>字号</label><div class="range-line"><input id="currentFontSize" type="range" min="12" max="72"><div class="value-box"><input id="currentFontSizeValue" type="number" min="12" max="72"><span>px</span></div></div></div>
-                <div class="field"><label>颜色</label><input id="currentTextColor" type="color"></div>
+                <div class="field"><label>文字颜色</label><input id="currentTextColor" type="color"></div>
+                <div class="field"><label>文字透明度</label><div class="range-line"><input id="currentTextOpacity" type="range" min="0" max="100"><div class="value-box"><input id="currentTextOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
                 <div class="field"><label>字重</label><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
                 <div class="field"><label>文字对齐</label><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
+                <div class="field"><label>区域背景颜色</label><input id="currentBackground" type="color"></div>
+                <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="currentBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="currentBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
               <div class="field"><label>无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
             </div>
 
             <div class="style-section">
-              <h3>队列区域文字样式</h3>
+              <h3>队列区域文字与背景</h3>
               <div class="settings-grid">
+                <div class="field"><label>字体</label><select id="queueFontFile" class="font-select"><option value="">默认字体</option></select></div>
                 <div class="field"><label>字号</label><div class="range-line"><input id="queueFontSize" type="range" min="12" max="72"><div class="value-box"><input id="queueFontSizeValue" type="number" min="12" max="72"><span>px</span></div></div></div>
-                <div class="field"><label>颜色</label><input id="queueTextColor" type="color"></div>
+                <div class="field"><label>文字颜色</label><input id="queueTextColor" type="color"></div>
+                <div class="field"><label>文字透明度</label><div class="range-line"><input id="queueTextOpacity" type="range" min="0" max="100"><div class="value-box"><input id="queueTextOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
                 <div class="field"><label>字重</label><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+                <div class="field"><label>区域背景颜色</label><input id="queueBackground" type="color"></div>
+                <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="queueBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="queueBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
               <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
             </div>
 
             <div class="style-section">
-              <h3>说明区域文字样式</h3>
+              <h3>说明区域文字与背景</h3>
               <div class="settings-grid">
+                <div class="field"><label>字体</label><select id="infoFontFile" class="font-select"><option value="">默认字体</option></select></div>
                 <div class="field"><label>字号</label><div class="range-line"><input id="infoFontSize" type="range" min="10" max="60"><div class="value-box"><input id="infoFontSizeValue" type="number" min="10" max="60"><span>px</span></div></div></div>
-                <div class="field"><label>颜色</label><input id="infoTextColor" type="color"></div>
+                <div class="field"><label>文字颜色</label><input id="infoTextColor" type="color"></div>
+                <div class="field"><label>文字透明度</label><div class="range-line"><input id="infoTextOpacity" type="range" min="0" max="100"><div class="value-box"><input id="infoTextOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
                 <div class="field"><label>字重</label><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
                 <div class="field"><label>文字对齐</label><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
+                <div class="field"><label>区域背景颜色</label><input id="infoBackground" type="color"></div>
+                <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="infoBackgroundOpacity" type="range" min="0" max="100"><div class="value-box"><input id="infoBackgroundOpacityValue" type="number" min="0" max="100"><span>%</span></div></div></div>
               </div>
               <div class="field"><label>右侧说明内容（第一行队列数由程序生成，使用相同文字样式）</label><textarea id="infoText" rows="4" placeholder="第二行开始自由编辑，支持手动换行和自动换行"></textarea></div>
             </div>
@@ -161,17 +198,6 @@
             <label class="checkbox-row"><input id="showCount" type="checkbox">显示第一行队列人数</label>
             <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
 
-            <div class="preview-wrap"><iframe id="previewFrame" src="/overlay?preview=1"></iframe></div>
-            <div class="divider"></div>
-            <div class="field">
-              <label>OBS 浏览器源地址</label>
-              <div id="obsUrl" class="obs-url"></div>
-            </div>
-            <div class="row wrap">
-              <button id="copyUrlBtn" class="btn primary">复制地址</button>
-              <button id="openOverlayBtn" class="btn">单独打开</button>
-            </div>
-            <p id="obsSizeHint" class="setting-note"></p>
           </div>
         </article>
       </section>

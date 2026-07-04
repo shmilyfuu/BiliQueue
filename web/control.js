@@ -6,6 +6,7 @@ let dragId = null;
 let mockCounter = 1;
 let qrPollTimer = null;
 let qrKey = null;
+let fontFiles = [];
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
@@ -16,7 +17,17 @@ const numericPairs = {
   queueFontSize: 'queueFontSizeValue',
   infoFontSize: 'infoFontSizeValue',
   speed: 'speedValue',
-  opacity: 'opacityValue',
+  gradientTopOpacity: 'gradientTopOpacityValue',
+  gradientBottomOpacity: 'gradientBottomOpacityValue',
+  gradientStart: 'gradientStartValue',
+  gradientEnd: 'gradientEndValue',
+  avatarSize: 'avatarSizeValue',
+  currentTextOpacity: 'currentTextOpacityValue',
+  queueTextOpacity: 'queueTextOpacityValue',
+  infoTextOpacity: 'infoTextOpacityValue',
+  currentBackgroundOpacity: 'currentBackgroundOpacityValue',
+  queueBackgroundOpacity: 'queueBackgroundOpacityValue',
+  infoBackgroundOpacity: 'infoBackgroundOpacityValue',
   radius: 'radiusValue',
   currentWidth: 'currentWidthValue',
   queueWidth: 'queueWidthValue',
@@ -43,6 +54,38 @@ function mediaImageURL(raw) {
   if (!value) return '';
   if (value.startsWith('/api/media/image?')) return value;
   return `/api/media/image?url=${encodeURIComponent(value)}`;
+}
+
+function fillFontSelect(id, selected) {
+  const select = $(id);
+  if (!select) return;
+  const value = String(selected || '');
+  const options = ['<option value="">默认字体</option>'];
+  for (const font of fontFiles) {
+    const label = `${font.label || font.file} · ${String(font.file).split('.').pop().toUpperCase()}`;
+    options.push(`<option value="${escapeHtml(font.file)}">${escapeHtml(label)}</option>`);
+  }
+  if (value && !fontFiles.some(font => font.file === value)) {
+    options.push(`<option value="${escapeHtml(value)}">${escapeHtml(value)}（文件不存在）</option>`);
+  }
+  select.innerHTML = options.join('');
+  select.value = value;
+}
+
+async function loadFontOptions(announce = false) {
+  try {
+    const result = await api('/api/fonts', {method:'GET'});
+    fontFiles = Array.isArray(result.fonts) ? result.fonts : [];
+    const o = state?.config?.overlay || {};
+    fillFontSelect('currentFontFile', o.currentFontFile);
+    fillFontSelect('queueFontFile', o.queueFontFile);
+    fillFontSelect('infoFontFile', o.infoFontFile);
+    $('fontStatus').textContent = fontFiles.length ? `已读取 ${fontFiles.length} 个字体文件` : 'fonts 文件夹中暂无字体文件';
+    if (announce) toast(fontFiles.length ? `已刷新 ${fontFiles.length} 个字体` : '未发现字体文件');
+  } catch (err) {
+    $('fontStatus').textContent = `字体读取失败：${err.message}`;
+    if (announce) toast(err.message);
+  }
 }
 
 function toast(message) {
@@ -108,6 +151,23 @@ function renderCurrent() {
   $('currentCard').innerHTML = `${avatarHTML(user)}<div class="current-copy"><small>当前用户 · 第 1 位</small><strong>${escapeHtml(user.username)}</strong>${giftHTML(user)}</div>`;
 }
 
+function clearDropIndicators() {
+  document.querySelectorAll('.queue-item.drop-before,.queue-item.drop-after').forEach(node => node.classList.remove('drop-before','drop-after'));
+}
+
+async function submitQueueOrder(ids) {
+  try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
+}
+
+async function moveQueueUser(id, delta) {
+  const ids = state.queue.map(user => user.id);
+  const from = ids.indexOf(id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= ids.length) return;
+  [ids[from], ids[to]] = [ids[to], ids[from]];
+  await submitQueueOrder(ids);
+}
+
 function renderQueue() {
   const list = $('queueList');
   if (!state.queue.length) {
@@ -116,26 +176,56 @@ function renderQueue() {
   }
   list.innerHTML = state.queue.map((user, index) => `
     <div class="queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
+      <span class="drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
       <div class="position">${String(index + 1).padStart(2, '0')}</div>
       <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small>${giftHTML(user)}</div></div>
-      <div class="queue-actions"><button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button></div>
+      <div class="queue-actions">
+        <button class="btn small move-btn" data-move-up="${escapeHtml(user.id)}" ${index === 0 ? 'disabled' : ''} title="上移一位">↑</button>
+        <button class="btn small move-btn" data-move-down="${escapeHtml(user.id)}" ${index === state.queue.length - 1 ? 'disabled' : ''} title="下移一位">↓</button>
+        <button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button>
+      </div>
     </div>`).join('');
 
   list.querySelectorAll('.queue-item').forEach(node => {
-    node.addEventListener('dragstart', () => { dragId = node.dataset.id; node.classList.add('dragging'); });
-    node.addEventListener('dragend', () => { node.classList.remove('dragging'); dragId = null; });
-    node.addEventListener('dragover', event => event.preventDefault());
+    node.addEventListener('dragstart', event => {
+      dragId = node.dataset.id;
+      node.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', dragId);
+    });
+    node.addEventListener('dragend', () => {
+      node.classList.remove('dragging');
+      dragId = null;
+      clearDropIndicators();
+    });
+    node.addEventListener('dragover', event => {
+      event.preventDefault();
+      if (!dragId || dragId === node.dataset.id) return;
+      clearDropIndicators();
+      const rect = node.getBoundingClientRect();
+      node.classList.add(event.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
+      event.dataTransfer.dropEffect = 'move';
+    });
+    node.addEventListener('dragleave', event => {
+      if (!node.contains(event.relatedTarget)) node.classList.remove('drop-before','drop-after');
+    });
     node.addEventListener('drop', async event => {
       event.preventDefault();
       const targetId = node.dataset.id;
-      if (!dragId || dragId === targetId) return;
+      if (!dragId || dragId === targetId) return clearDropIndicators();
+      const after = node.classList.contains('drop-after');
       const ids = state.queue.map(user => user.id);
       const from = ids.indexOf(dragId);
-      const to = ids.indexOf(targetId);
-      ids.splice(to, 0, ids.splice(from, 1)[0]);
-      try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
+      if (from < 0) return clearDropIndicators();
+      ids.splice(from, 1);
+      const target = ids.indexOf(targetId);
+      ids.splice(target + (after ? 1 : 0), 0, dragId);
+      clearDropIndicators();
+      await submitQueueOrder(ids);
     });
   });
+  list.querySelectorAll('[data-move-up]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveUp, -1)));
+  list.querySelectorAll('[data-move-down]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveDown, 1)));
   list.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', async () => {
     try { await api('/api/queue/remove', {body:{id:btn.dataset.remove}}); } catch (err) { toast(err.message); }
   }));
@@ -178,7 +268,17 @@ function fillSettings(cfg, force) {
   setPair('queueFontSize', o.queueFontSize, force);
   setPair('infoFontSize', o.infoFontSize, force);
   setPair('speed', o.speed, force);
-  setPair('opacity', Math.round(o.opacity * 100), force);
+  setPair('gradientTopOpacity', Math.round(o.gradientTopOpacity * 100), force);
+  setPair('gradientBottomOpacity', Math.round(o.gradientBottomOpacity * 100), force);
+  setPair('gradientStart', o.gradientStart ?? Math.max(0, 100 - (o.gradientRange ?? 100)), force);
+  setPair('gradientEnd', o.gradientEnd ?? 100, force);
+  setPair('avatarSize', o.avatarSize ?? 32, force);
+  setPair('currentTextOpacity', Math.round(o.currentTextOpacity * 100), force);
+  setPair('queueTextOpacity', Math.round(o.queueTextOpacity * 100), force);
+  setPair('infoTextOpacity', Math.round(o.infoTextOpacity * 100), force);
+  setPair('currentBackgroundOpacity', Math.round(o.currentBackgroundOpacity * 100), force);
+  setPair('queueBackgroundOpacity', Math.round(o.queueBackgroundOpacity * 100), force);
+  setPair('infoBackgroundOpacity', Math.round(o.infoBackgroundOpacity * 100), force);
   setPair('radius', o.radius, force);
   setPair('currentWidth', o.currentWidth, force);
   setPair('queueWidth', o.queueWidth, force);
@@ -195,17 +295,28 @@ function fillSettings(cfg, force) {
     queueEmptyText:o.queueEmptyText,
     infoText:o.infoText,
     currentTextColor:o.currentTextColor,
+    currentFontFile:o.currentFontFile,
     currentFontWeight:o.currentFontWeight,
     currentTextAlign:o.currentTextAlign,
     queueTextColor:o.queueTextColor,
+    queueFontFile:o.queueFontFile,
     queueFontWeight:o.queueFontWeight,
     infoTextColor:o.infoTextColor,
+    infoFontFile:o.infoFontFile,
     infoFontWeight:o.infoFontWeight,
     infoTextAlign:o.infoTextAlign,
+    currentBackground:o.currentBackground,
+    queueBackground:o.queueBackground,
+    infoBackground:o.infoBackground,
   };
   for (const [id, value] of Object.entries(plain)) {
     const node = $(id);
     if (force || document.activeElement !== node) node.value = value ?? '';
+  }
+  if (fontFiles.length || o.currentFontFile || o.queueFontFile || o.infoFontFile) {
+    if (force || document.activeElement !== $('currentFontFile')) fillFontSelect('currentFontFile', o.currentFontFile);
+    if (force || document.activeElement !== $('queueFontFile')) fillFontSelect('queueFontFile', o.queueFontFile);
+    if (force || document.activeElement !== $('infoFontFile')) fillFontSelect('infoFontFile', o.infoFontFile);
   }
   $('showAvatar').checked = Boolean(o.showAvatar);
   $('showCount').checked = Boolean(o.showCount);
@@ -224,7 +335,7 @@ function clampNumber(node) {
 
 function collectConfig() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 7,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     joinCommand: $('joinCommand').value.trim() || '排队',
     cancelCommand: $('cancelCommand').value.trim() || '取消排队',
@@ -239,18 +350,34 @@ function collectConfig() {
       fontSize: Number($('queueFontSize').value),
       currentFontSize: Number($('currentFontSize').value),
       currentTextColor: $('currentTextColor').value,
+      currentTextOpacity: Number($('currentTextOpacity').value) / 100,
+      currentFontFile: $('currentFontFile').value,
       currentFontWeight: Number($('currentFontWeight').value),
       currentTextAlign: $('currentTextAlign').value,
       queueFontSize: Number($('queueFontSize').value),
       queueTextColor: $('queueTextColor').value,
+      queueTextOpacity: Number($('queueTextOpacity').value) / 100,
+      queueFontFile: $('queueFontFile').value,
       queueFontWeight: Number($('queueFontWeight').value),
       infoFontSize: Number($('infoFontSize').value),
       infoTextColor: $('infoTextColor').value,
+      infoTextOpacity: Number($('infoTextOpacity').value) / 100,
+      infoFontFile: $('infoFontFile').value,
       infoFontWeight: Number($('infoFontWeight').value),
       infoTextAlign: $('infoTextAlign').value,
       speed: Number($('speed').value),
       background: $('background').value,
-      opacity: Number($('opacity').value) / 100,
+      gradientTopOpacity: Number($('gradientTopOpacity').value) / 100,
+      gradientBottomOpacity: Number($('gradientBottomOpacity').value) / 100,
+      gradientStart: Number($('gradientStart').value),
+      gradientEnd: Number($('gradientEnd').value),
+      avatarSize: Number($('avatarSize').value),
+      currentBackground: $('currentBackground').value,
+      currentBackgroundOpacity: Number($('currentBackgroundOpacity').value) / 100,
+      queueBackground: $('queueBackground').value,
+      queueBackgroundOpacity: Number($('queueBackgroundOpacity').value) / 100,
+      infoBackground: $('infoBackground').value,
+      infoBackgroundOpacity: Number($('infoBackgroundOpacity').value) / 100,
       radius: Number($('radius').value),
       showAvatar: $('showAvatar').checked,
       showCount: $('showCount').checked,
@@ -275,7 +402,6 @@ function updateSizeHint() {
   const width = Number($('currentWidth').value || 0) + Number($('queueWidth').value || 0) + Number($('infoWidth').value || 0);
   const height = Number($('height').value || 0);
   $('obsSizeHint').textContent = `OBS 建议浏览器源尺寸：${width} × ${height}，FPS 30。三个区域宽度之和即横条总宽度。`;
-  $('previewFrame').style.height = `${Math.min(340, Math.max(140, height + 20))}px`;
 }
 
 function scheduleSave() {
@@ -406,6 +532,7 @@ async function init() {
   const initial = await fetch('/api/state').then(r => r.json());
   render(initial);
   bindNumericPairs();
+  await loadFontOptions();
 
   const source = new EventSource('/events');
   source.onmessage = event => render(JSON.parse(event.data));
@@ -459,17 +586,22 @@ async function init() {
     await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
   });
 
-  const settingIds = ['joinCommand','cancelCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','scrollMode','shortAlign','emptyText','queueEmptyText','infoText','currentTextColor','currentFontWeight','currentTextAlign','queueTextColor','queueFontWeight','infoTextColor','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
+  const settingIds = ['joinCommand','cancelCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','emptyText','queueEmptyText','infoText','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
   settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
   settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
+  $('refreshFontsBtn').addEventListener('click', async () => {
+    await loadFontOptions(true);
+    $('previewFrame').contentWindow.location.reload();
+  });
 
   $('resetStyleBtn').addEventListener('click', async () => {
     const cfg = collectConfig();
     cfg.overlay = {
-      height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentFontWeight:600,currentTextAlign:'left',
-      queueFontSize:24,queueTextColor:'#ffffff',queueFontWeight:500,
-      infoFontSize:18,infoTextColor:'#ffffff',infoFontWeight:500,infoTextAlign:'left',
-      speed:40,background:'#000000',opacity:.45,radius:16,
+      height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',
+      queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueFontFile:'',queueFontWeight:500,
+      infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
+      speed:40,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,
+      currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
       showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,
       scrollMode:'continuous',shortAlign:'center',currentWidth:300,queueWidth:1220,infoWidth:400,
       queueLineGap:8,infoLineGap:4,doubleLineThreshold:8,

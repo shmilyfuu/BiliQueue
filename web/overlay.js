@@ -10,6 +10,8 @@ let scrolling = false;
 let pageTimer = null;
 let pageIndex = 0;
 const isPreview = new URLSearchParams(location.search).has('preview');
+const loadedFonts = new Map();
+const defaultFontStack = 'Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif';
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
@@ -18,6 +20,35 @@ function hexToRgb(hex) {
   const value = String(hex || '').replace('#','');
   if (value.length !== 6) return [0,0,0];
   return [parseInt(value.slice(0,2),16),parseInt(value.slice(2,4),16),parseInt(value.slice(4,6),16)];
+}
+function clamp01(value, fallback = 1) {
+  const n = Number(value ?? fallback);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+function rgba(hex, alpha) {
+  const [r,g,b] = hexToRgb(hex);
+  const a = clamp01(alpha);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function fontFamilyName(file) {
+  let hash = 2166136261;
+  for (const ch of String(file || '')) {
+    hash ^= ch.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `BiliQueueFont_${(hash >>> 0).toString(16)}`;
+}
+function ensureFont(file) {
+  const name = String(file || '').trim();
+  if (!name) return defaultFontStack;
+  const family = fontFamilyName(name);
+  if (!loadedFonts.has(name)) {
+    const face = new FontFace(family, `url("/fonts/${encodeURIComponent(name)}")`);
+    loadedFonts.set(name, face);
+    face.load().then(loaded => document.fonts.add(loaded)).catch(() => loadedFonts.delete(name));
+  }
+  return `"${family}",${defaultFontStack}`;
 }
 function mediaImageURL(raw) {
   const value = String(raw || '').trim();
@@ -57,21 +88,35 @@ function stopScroll() {
 function apply(nextState) {
   state = nextState;
   const o = state.config.overlay;
-  const [r,g,b] = hexToRgb(o.background || '#000000');
   const root = document.documentElement.style;
   root.setProperty('--bar-height', `${o.height}px`);
   root.setProperty('--current-font-size', `${o.currentFontSize}px`);
-  root.setProperty('--current-text-color', o.currentTextColor || '#ffffff');
+  root.setProperty('--current-text-color', rgba(o.currentTextColor || '#ffffff', o.currentTextOpacity));
   root.setProperty('--current-font-weight', String(o.currentFontWeight || 600));
   root.setProperty('--current-text-align', o.currentTextAlign || 'left');
+  root.setProperty('--current-font-family', ensureFont(o.currentFontFile));
   root.setProperty('--queue-font-size', `${o.queueFontSize}px`);
-  root.setProperty('--queue-text-color', o.queueTextColor || '#ffffff');
+  root.setProperty('--queue-text-color', rgba(o.queueTextColor || '#ffffff', o.queueTextOpacity));
   root.setProperty('--queue-font-weight', String(o.queueFontWeight || 500));
+  root.setProperty('--queue-font-family', ensureFont(o.queueFontFile));
   root.setProperty('--info-font-size', `${o.infoFontSize}px`);
-  root.setProperty('--info-text-color', o.infoTextColor || '#ffffff');
+  root.setProperty('--info-text-color', rgba(o.infoTextColor || '#ffffff', o.infoTextOpacity));
   root.setProperty('--info-font-weight', String(o.infoFontWeight || 500));
   root.setProperty('--info-text-align', o.infoTextAlign || 'left');
-  root.setProperty('--bar-bg', `rgba(${r},${g},${b},${o.opacity})`);
+  root.setProperty('--info-font-family', ensureFont(o.infoFontFile));
+  root.setProperty('--global-bg-color', rgba(o.background || '#000000', 1));
+  root.setProperty('--mask-top', String(clamp01(o.gradientTopOpacity)));
+  root.setProperty('--mask-bottom', String(clamp01(o.gradientBottomOpacity)));
+  const gradientStart = Math.max(0, Math.min(100, Number(o.gradientStart ?? Math.max(0, 100 - Number(o.gradientRange || 100)))));
+  const gradientEnd = Math.max(gradientStart, Math.min(100, Number(o.gradientEnd ?? 100)));
+  root.setProperty('--mask-start', `${gradientStart}%`);
+  root.setProperty('--mask-end', `${gradientEnd}%`);
+  root.setProperty('--avatar-size', `${Math.max(12, Math.min(96, Number(o.avatarSize || 32)))}px`);
+  root.setProperty('--current-bg', rgba(o.currentBackground || '#ffffff', o.currentBackgroundOpacity));
+  root.setProperty('--queue-bg', rgba(o.queueBackground || '#000000', o.queueBackgroundOpacity));
+  root.setProperty('--info-bg', rgba(o.infoBackground || '#ffffff', o.infoBackgroundOpacity));
+  const edgeAlpha = Math.max(Number(o.queueBackgroundOpacity || 0), (Number(o.gradientTopOpacity || 0) + Number(o.gradientBottomOpacity || 0)) / 2);
+  root.setProperty('--queue-edge', rgba(Number(o.queueBackgroundOpacity || 0) > 0 ? o.queueBackground : o.background, edgeAlpha));
   root.setProperty('--radius', `${o.radius}px`);
   root.setProperty('--current-width', `${o.currentWidth}px`);
   root.setProperty('--queue-width', `${o.queueWidth}px`);
@@ -80,9 +125,12 @@ function apply(nextState) {
   root.setProperty('--info-line-gap', `${o.infoLineGap}px`);
 
   const current = state.queue[0];
-  $('current').innerHTML = current
-    ? `<div class="current-user">${avatar(current,o.showAvatar)}${giftMark(current,o.showGiftIcon)}<div class="current-copy"><small>当前</small><strong>${escapeHtml(current.username)}</strong></div></div>`
-    : `<div class="placeholder">${escapeHtml(o.emptyText || '排队空闲中')}</div>`;
+  if (current) {
+    const media = `${avatar(current,o.showAvatar)}${giftMark(current,o.showGiftIcon)}`;
+    $('current').innerHTML = `<div class="current-user${media ? '' : ' no-media'}">${media ? `<div class="current-media">${media}</div>` : ''}<span class="current-label">当前</span><strong class="current-name">${escapeHtml(current.username)}</strong></div>`;
+  } else {
+    $('current').innerHTML = `<div class="placeholder">${escapeHtml(o.emptyText || '排队空闲中')}</div>`;
+  }
 
   const infoLines = [];
   if (o.showCount) infoLines.push(`<div class="info-line">${state.paused ? `当前队列：${state.queue.length} 人（暂停）` : `当前队列：${state.queue.length} 人`}</div>`);
@@ -103,7 +151,9 @@ function updatePreviewScale() {
   }
   const o = state.config.overlay;
   const totalWidth = Number(o.currentWidth || 0) + Number(o.queueWidth || 0) + Number(o.infoWidth || 0);
-  const scale = totalWidth > 0 ? Math.min(1, window.innerWidth / totalWidth) : 1;
+  const widthScale = totalWidth > 0 ? window.innerWidth / totalWidth : 1;
+  const heightScale = Number(o.height || 0) > 0 ? window.innerHeight / Number(o.height) : 1;
+  const scale = Math.min(1, widthScale, heightScale);
   bar.style.transformOrigin = 'left center';
   bar.style.transform = `scale(${scale})`;
 }

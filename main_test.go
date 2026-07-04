@@ -382,7 +382,7 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	a := newApp(dir)
 	cfg := a.state().Config
-	if cfg.SchemaVersion != 4 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
+	if cfg.SchemaVersion != 7 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
 		t.Fatalf("legacy widths not migrated: %#v", cfg.Overlay)
 	}
 	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.DoubleLineThreshold != 8 {
@@ -390,6 +390,15 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	if cfg.GiftPriority.Enabled {
 		t.Fatal("disabled gift priority should remain disabled during migration")
+	}
+	if cfg.Overlay.GradientTopOpacity != .45 || cfg.Overlay.GradientBottomOpacity != .45 {
+		t.Fatalf("legacy background opacity not migrated: %#v", cfg.Overlay)
+	}
+	if cfg.Overlay.CurrentTextOpacity != 1 || cfg.Overlay.QueueTextOpacity != 1 || cfg.Overlay.InfoTextOpacity != 1 {
+		t.Fatalf("legacy text opacity not migrated: %#v", cfg.Overlay)
+	}
+	if cfg.Overlay.GradientStart != 0 || cfg.Overlay.GradientEnd != 100 || cfg.Overlay.AvatarSize != 32 {
+		t.Fatalf("legacy gradient/avatar defaults not migrated: %#v", cfg.Overlay)
 	}
 }
 
@@ -415,6 +424,9 @@ func TestOverlayAreaTextDefaults(t *testing.T) {
 	if o.QueueEmptyText != "空" {
 		t.Fatalf("unexpected queue empty text: %q", o.QueueEmptyText)
 	}
+	if o.GradientStart != 0 || o.GradientEnd != 100 || o.AvatarSize != 32 {
+		t.Fatalf("unexpected gradient/avatar defaults: %#v", o)
+	}
 }
 
 func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
@@ -430,7 +442,7 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	cfg.Overlay.ShortAlign = "center"
 	cfg.Overlay.EmptyText = "排队空闲中"
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 4 {
+	if cfg.SchemaVersion != 7 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.CurrentFontSize != 30 || cfg.Overlay.QueueFontSize != 30 {
@@ -438,5 +450,65 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	}
 	if cfg.Overlay.InfoFontSize != 18 || cfg.Overlay.QueueEmptyText != "空" {
 		t.Fatalf("new defaults not added: %#v", cfg.Overlay)
+	}
+}
+
+func TestFontDirectoryListingAndServing(t *testing.T) {
+	a := newApp(t.TempDir())
+	if err := os.WriteFile(filepath.Join(a.fontsDir, "测试字体.ttf"), []byte("font-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.fontsDir, "ignore.txt"), []byte("no"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fonts := a.listFonts()
+	if len(fonts) != 1 || fonts[0].File != "测试字体.ttf" {
+		t.Fatalf("unexpected fonts: %#v", fonts)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/fonts/%E6%B5%8B%E8%AF%95%E5%AD%97%E4%BD%93.ttf", nil)
+	rr := httptest.NewRecorder()
+	a.handleFontFile(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.String() != "font-data" {
+		t.Fatalf("font response: code=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+func TestV6AllowsZeroOpacity(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Overlay.CurrentTextOpacity = 0
+	cfg.Overlay.QueueTextOpacity = 0
+	cfg.Overlay.InfoTextOpacity = 0
+	cfg.Overlay.GradientTopOpacity = 0
+	cfg.Overlay.GradientBottomOpacity = 0
+	cfg.Overlay.CurrentBackgroundOpacity = 0
+	cfg.Overlay.QueueBackgroundOpacity = 0
+	cfg.Overlay.InfoBackgroundOpacity = 0
+	cfg.Overlay.GradientStart = 40
+	cfg.Overlay.GradientEnd = 80
+	cfg.Overlay.AvatarSize = 44
+	applyConfigDefaults(&cfg)
+	if cfg.Overlay.CurrentTextOpacity != 0 || cfg.Overlay.QueueTextOpacity != 0 || cfg.Overlay.InfoTextOpacity != 0 {
+		t.Fatalf("zero text opacity was overwritten: %#v", cfg.Overlay)
+	}
+	if cfg.Overlay.GradientTopOpacity != 0 || cfg.Overlay.GradientBottomOpacity != 0 {
+		t.Fatalf("zero gradient opacity was overwritten: %#v", cfg.Overlay)
+	}
+	if cfg.Overlay.GradientStart != 40 || cfg.Overlay.GradientEnd != 80 || cfg.Overlay.AvatarSize != 44 {
+		t.Fatalf("gradient bounds or avatar size was overwritten: %#v", cfg.Overlay)
+	}
+}
+
+func TestV6GradientRangeMigratesToStartEnd(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SchemaVersion = 6
+	cfg.Overlay.GradientRange = 50
+	cfg.Overlay.GradientStart = 0
+	cfg.Overlay.GradientEnd = 0
+	applyConfigDefaults(&cfg)
+	if cfg.SchemaVersion != 7 {
+		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
+	}
+	if cfg.Overlay.GradientStart != 50 || cfg.Overlay.GradientEnd != 100 {
+		t.Fatalf("legacy gradient range not migrated: %#v", cfg.Overlay)
 	}
 }

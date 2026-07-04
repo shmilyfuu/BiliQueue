@@ -27,39 +27,57 @@ import (
 var webFiles embed.FS
 
 type OverlayStyle struct {
-	Height              int     `json:"height"`
-	FontSize            int     `json:"fontSize,omitempty"` // legacy global font size
-	CurrentFontSize     int     `json:"currentFontSize"`
-	CurrentTextColor    string  `json:"currentTextColor"`
-	CurrentFontWeight   int     `json:"currentFontWeight"`
-	CurrentTextAlign    string  `json:"currentTextAlign"`
-	QueueFontSize       int     `json:"queueFontSize"`
-	QueueTextColor      string  `json:"queueTextColor"`
-	QueueFontWeight     int     `json:"queueFontWeight"`
-	InfoFontSize        int     `json:"infoFontSize"`
-	InfoTextColor       string  `json:"infoTextColor"`
-	InfoFontWeight      int     `json:"infoFontWeight"`
-	InfoTextAlign       string  `json:"infoTextAlign"`
-	Speed               float64 `json:"speed"`
-	Background          string  `json:"background"`
-	Opacity             float64 `json:"opacity"`
-	Radius              int     `json:"radius"`
-	ShowAvatar          bool    `json:"showAvatar"`
-	ShowCount           bool    `json:"showCount"`
-	ShowRules           bool    `json:"showRules"`
-	ShowGiftIcon        bool    `json:"showGiftIcon"`
-	ScrollMode          string  `json:"scrollMode"`
-	ShortAlign          string  `json:"shortAlign"`
-	CurrentWidth        int     `json:"currentWidth"`
-	QueueWidth          int     `json:"queueWidth"`
-	InfoWidth           int     `json:"infoWidth"`
-	LegacyCountWidth    int     `json:"countWidth,omitempty"`
-	QueueLineGap        int     `json:"queueLineGap"`
-	InfoLineGap         int     `json:"infoLineGap"`
-	DoubleLineThreshold int     `json:"doubleLineThreshold"`
-	InfoText            string  `json:"infoText"`
-	EmptyText           string  `json:"emptyText"`
-	QueueEmptyText      string  `json:"queueEmptyText"`
+	Height                   int     `json:"height"`
+	FontSize                 int     `json:"fontSize,omitempty"` // legacy global font size
+	CurrentFontSize          int     `json:"currentFontSize"`
+	CurrentTextColor         string  `json:"currentTextColor"`
+	CurrentFontWeight        int     `json:"currentFontWeight"`
+	CurrentTextAlign         string  `json:"currentTextAlign"`
+	CurrentFontFile          string  `json:"currentFontFile,omitempty"`
+	CurrentTextOpacity       float64 `json:"currentTextOpacity"`
+	QueueFontSize            int     `json:"queueFontSize"`
+	QueueTextColor           string  `json:"queueTextColor"`
+	QueueFontWeight          int     `json:"queueFontWeight"`
+	QueueFontFile            string  `json:"queueFontFile,omitempty"`
+	QueueTextOpacity         float64 `json:"queueTextOpacity"`
+	InfoFontSize             int     `json:"infoFontSize"`
+	InfoTextColor            string  `json:"infoTextColor"`
+	InfoFontWeight           int     `json:"infoFontWeight"`
+	InfoTextAlign            string  `json:"infoTextAlign"`
+	InfoFontFile             string  `json:"infoFontFile,omitempty"`
+	InfoTextOpacity          float64 `json:"infoTextOpacity"`
+	Speed                    float64 `json:"speed"`
+	Background               string  `json:"background"`
+	Opacity                  float64 `json:"opacity,omitempty"` // legacy global opacity
+	GradientTopOpacity       float64 `json:"gradientTopOpacity"`
+	GradientBottomOpacity    float64 `json:"gradientBottomOpacity"`
+	GradientRange            int     `json:"gradientRange,omitempty"` // legacy gradient length, v0.1.9
+	GradientStart            int     `json:"gradientStart"`
+	GradientEnd              int     `json:"gradientEnd"`
+	AvatarSize               int     `json:"avatarSize"`
+	CurrentBackground        string  `json:"currentBackground"`
+	CurrentBackgroundOpacity float64 `json:"currentBackgroundOpacity"`
+	QueueBackground          string  `json:"queueBackground"`
+	QueueBackgroundOpacity   float64 `json:"queueBackgroundOpacity"`
+	InfoBackground           string  `json:"infoBackground"`
+	InfoBackgroundOpacity    float64 `json:"infoBackgroundOpacity"`
+	Radius                   int     `json:"radius"`
+	ShowAvatar               bool    `json:"showAvatar"`
+	ShowCount                bool    `json:"showCount"`
+	ShowRules                bool    `json:"showRules"`
+	ShowGiftIcon             bool    `json:"showGiftIcon"`
+	ScrollMode               string  `json:"scrollMode"`
+	ShortAlign               string  `json:"shortAlign"`
+	CurrentWidth             int     `json:"currentWidth"`
+	QueueWidth               int     `json:"queueWidth"`
+	InfoWidth                int     `json:"infoWidth"`
+	LegacyCountWidth         int     `json:"countWidth,omitempty"`
+	QueueLineGap             int     `json:"queueLineGap"`
+	InfoLineGap              int     `json:"infoLineGap"`
+	DoubleLineThreshold      int     `json:"doubleLineThreshold"`
+	InfoText                 string  `json:"infoText"`
+	EmptyText                string  `json:"emptyText"`
+	QueueEmptyText           string  `json:"queueEmptyText"`
 }
 
 type GiftPriorityConfig struct {
@@ -135,62 +153,81 @@ type App struct {
 	lastGift         *GiftMessage
 	giftEvents       map[string]int64
 
-	dataDir string
-	clients map[chan []byte]struct{}
+	dataDir  string
+	fontsDir string
+	clients  map[chan []byte]struct{}
 
 	connectionCancel     context.CancelFunc
 	connectionGeneration uint64
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.6"
+const version = "0.1.10"
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 4,
+		SchemaVersion: 7,
 		RoomID:        "",
 		JoinCommand:   "排队",
 		CancelCommand: "取消排队",
 		MaxQueue:      100,
 		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
 		Overlay: OverlayStyle{
-			Height:              120,
-			FontSize:            24,
-			CurrentFontSize:     24,
-			CurrentTextColor:    "#ffffff",
-			CurrentFontWeight:   600,
-			CurrentTextAlign:    "left",
-			QueueFontSize:       24,
-			QueueTextColor:      "#ffffff",
-			QueueFontWeight:     500,
-			InfoFontSize:        18,
-			InfoTextColor:       "#ffffff",
-			InfoFontWeight:      500,
-			InfoTextAlign:       "left",
-			Speed:               40,
-			Background:          "#000000",
-			Opacity:             0.45,
-			Radius:              16,
-			ShowAvatar:          true,
-			ShowCount:           true,
-			ShowRules:           true,
-			ShowGiftIcon:        true,
-			ScrollMode:          "continuous",
-			ShortAlign:          "center",
-			CurrentWidth:        300,
-			QueueWidth:          1220,
-			InfoWidth:           400,
-			QueueLineGap:        8,
-			InfoLineGap:         4,
-			DoubleLineThreshold: 8,
-			InfoText:            "弹幕发送“排队”加入\n达到礼物门槛可进入优先队列",
-			EmptyText:           "排队空闲中",
-			QueueEmptyText:      "空",
+			Height:                   120,
+			FontSize:                 24,
+			CurrentFontSize:          24,
+			CurrentTextColor:         "#ffffff",
+			CurrentFontWeight:        600,
+			CurrentTextAlign:         "left",
+			CurrentTextOpacity:       1,
+			QueueFontSize:            24,
+			QueueTextColor:           "#ffffff",
+			QueueFontWeight:          500,
+			QueueTextOpacity:         1,
+			InfoFontSize:             18,
+			InfoTextColor:            "#ffffff",
+			InfoFontWeight:           500,
+			InfoTextAlign:            "left",
+			InfoTextOpacity:          1,
+			Speed:                    40,
+			Background:               "#000000",
+			GradientTopOpacity:       0.45,
+			GradientBottomOpacity:    0.45,
+			GradientRange:            0,
+			GradientStart:            0,
+			GradientEnd:              100,
+			AvatarSize:               32,
+			CurrentBackground:        "#ffffff",
+			CurrentBackgroundOpacity: 0.07,
+			QueueBackground:          "#000000",
+			QueueBackgroundOpacity:   0,
+			InfoBackground:           "#ffffff",
+			InfoBackgroundOpacity:    0.05,
+			Radius:                   16,
+			ShowAvatar:               true,
+			ShowCount:                true,
+			ShowRules:                true,
+			ShowGiftIcon:             true,
+			ScrollMode:               "continuous",
+			ShortAlign:               "center",
+			CurrentWidth:             300,
+			QueueWidth:               1220,
+			InfoWidth:                400,
+			QueueLineGap:             8,
+			InfoLineGap:              4,
+			DoubleLineThreshold:      8,
+			InfoText:                 "弹幕发送“排队”加入\n达到礼物门槛可进入优先队列",
+			EmptyText:                "排队空闲中",
+			QueueEmptyText:           "空",
 		},
 	}
 }
 
 func newApp(dataDir string) *App {
+	fontsDir := filepath.Join(dataDir, "fonts")
+	if filepath.Base(filepath.Clean(dataDir)) == "data" {
+		fontsDir = filepath.Join(filepath.Dir(dataDir), "fonts")
+	}
 	a := &App{
 		config:           defaultConfig(),
 		loginStatus:      "logged_out",
@@ -198,10 +235,12 @@ func newApp(dataDir string) *App {
 		connectionStatus: "disconnected",
 		connectionDetail: "未连接",
 		dataDir:          dataDir,
+		fontsDir:         fontsDir,
 		clients:          make(map[chan []byte]struct{}),
 		giftEvents:       make(map[string]int64),
 	}
 	_ = os.MkdirAll(dataDir, 0o755)
+	_ = os.MkdirAll(a.fontsDir, 0o755)
 	a.loadConfig()
 	a.loadAuth()
 	a.loadTodayQueue()
@@ -321,6 +360,9 @@ func applyConfigDefaults(cfg *Config) {
 	def := defaultConfig()
 	legacyV2 := cfg.SchemaVersion < 2
 	legacyV3 := cfg.SchemaVersion < 3
+	legacyV5 := cfg.SchemaVersion < 5
+	legacyV6 := cfg.SchemaVersion < 6
+	legacyV7 := cfg.SchemaVersion < 7
 	if strings.TrimSpace(cfg.JoinCommand) == "" {
 		cfg.JoinCommand = def.JoinCommand
 	}
@@ -372,6 +414,39 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.InfoTextColor == "" {
 		cfg.Overlay.InfoTextColor = def.Overlay.InfoTextColor
 	}
+	if legacyV5 {
+		cfg.Overlay.CurrentTextOpacity = 1
+		cfg.Overlay.QueueTextOpacity = 1
+		cfg.Overlay.InfoTextOpacity = 1
+		legacyOpacity := cfg.Overlay.Opacity
+		if legacyOpacity < 0 || legacyOpacity > 1 {
+			legacyOpacity = def.Overlay.GradientTopOpacity
+		}
+		cfg.Overlay.GradientTopOpacity = legacyOpacity
+		cfg.Overlay.GradientBottomOpacity = legacyOpacity
+		cfg.Overlay.CurrentBackground = def.Overlay.CurrentBackground
+		cfg.Overlay.CurrentBackgroundOpacity = def.Overlay.CurrentBackgroundOpacity
+		cfg.Overlay.QueueBackground = def.Overlay.QueueBackground
+		cfg.Overlay.QueueBackgroundOpacity = def.Overlay.QueueBackgroundOpacity
+		cfg.Overlay.InfoBackground = def.Overlay.InfoBackground
+		cfg.Overlay.InfoBackgroundOpacity = def.Overlay.InfoBackgroundOpacity
+		cfg.Overlay.GradientRange = def.Overlay.GradientRange
+		cfg.Overlay.GradientStart = def.Overlay.GradientStart
+		cfg.Overlay.GradientEnd = def.Overlay.GradientEnd
+		cfg.Overlay.AvatarSize = def.Overlay.AvatarSize
+	}
+	cfg.Overlay.CurrentFontFile = normalizeFontFileName(cfg.Overlay.CurrentFontFile)
+	cfg.Overlay.QueueFontFile = normalizeFontFileName(cfg.Overlay.QueueFontFile)
+	cfg.Overlay.InfoFontFile = normalizeFontFileName(cfg.Overlay.InfoFontFile)
+	if cfg.Overlay.CurrentTextOpacity < 0 || cfg.Overlay.CurrentTextOpacity > 1 {
+		cfg.Overlay.CurrentTextOpacity = def.Overlay.CurrentTextOpacity
+	}
+	if cfg.Overlay.QueueTextOpacity < 0 || cfg.Overlay.QueueTextOpacity > 1 {
+		cfg.Overlay.QueueTextOpacity = def.Overlay.QueueTextOpacity
+	}
+	if cfg.Overlay.InfoTextOpacity < 0 || cfg.Overlay.InfoTextOpacity > 1 {
+		cfg.Overlay.InfoTextOpacity = def.Overlay.InfoTextOpacity
+	}
 	if cfg.Overlay.CurrentFontWeight < 100 || cfg.Overlay.CurrentFontWeight > 900 {
 		cfg.Overlay.CurrentFontWeight = def.Overlay.CurrentFontWeight
 	}
@@ -393,8 +468,49 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.Background == "" {
 		cfg.Overlay.Background = def.Overlay.Background
 	}
-	if cfg.Overlay.Opacity < 0 || cfg.Overlay.Opacity > 1 {
-		cfg.Overlay.Opacity = def.Overlay.Opacity
+	if cfg.Overlay.GradientTopOpacity < 0 || cfg.Overlay.GradientTopOpacity > 1 {
+		cfg.Overlay.GradientTopOpacity = def.Overlay.GradientTopOpacity
+	}
+	if cfg.Overlay.GradientBottomOpacity < 0 || cfg.Overlay.GradientBottomOpacity > 1 {
+		cfg.Overlay.GradientBottomOpacity = def.Overlay.GradientBottomOpacity
+	}
+	if legacyV6 || cfg.Overlay.GradientRange <= 0 || cfg.Overlay.GradientRange > 100 {
+		cfg.Overlay.GradientRange = 100
+	}
+	if legacyV7 {
+		// v0.1.9 used gradientRange as "length from start to bottom".
+		cfg.Overlay.GradientStart = 100 - cfg.Overlay.GradientRange
+		cfg.Overlay.GradientEnd = def.Overlay.GradientEnd
+	}
+	if cfg.Overlay.GradientStart < 0 || cfg.Overlay.GradientStart > 100 {
+		cfg.Overlay.GradientStart = def.Overlay.GradientStart
+	}
+	if cfg.Overlay.GradientEnd < 0 || cfg.Overlay.GradientEnd > 100 {
+		cfg.Overlay.GradientEnd = def.Overlay.GradientEnd
+	}
+	if cfg.Overlay.GradientEnd < cfg.Overlay.GradientStart {
+		cfg.Overlay.GradientEnd = cfg.Overlay.GradientStart
+	}
+	if legacyV6 || cfg.Overlay.AvatarSize < 12 || cfg.Overlay.AvatarSize > 96 {
+		cfg.Overlay.AvatarSize = def.Overlay.AvatarSize
+	}
+	if cfg.Overlay.CurrentBackground == "" {
+		cfg.Overlay.CurrentBackground = def.Overlay.CurrentBackground
+	}
+	if cfg.Overlay.QueueBackground == "" {
+		cfg.Overlay.QueueBackground = def.Overlay.QueueBackground
+	}
+	if cfg.Overlay.InfoBackground == "" {
+		cfg.Overlay.InfoBackground = def.Overlay.InfoBackground
+	}
+	if cfg.Overlay.CurrentBackgroundOpacity < 0 || cfg.Overlay.CurrentBackgroundOpacity > 1 {
+		cfg.Overlay.CurrentBackgroundOpacity = def.Overlay.CurrentBackgroundOpacity
+	}
+	if cfg.Overlay.QueueBackgroundOpacity < 0 || cfg.Overlay.QueueBackgroundOpacity > 1 {
+		cfg.Overlay.QueueBackgroundOpacity = def.Overlay.QueueBackgroundOpacity
+	}
+	if cfg.Overlay.InfoBackgroundOpacity < 0 || cfg.Overlay.InfoBackgroundOpacity > 1 {
+		cfg.Overlay.InfoBackgroundOpacity = def.Overlay.InfoBackgroundOpacity
 	}
 	if cfg.Overlay.ScrollMode == "" {
 		cfg.Overlay.ScrollMode = def.Overlay.ScrollMode
@@ -451,6 +567,8 @@ func applyConfigDefaults(cfg *Config) {
 		cfg.Overlay.QueueEmptyText = def.Overlay.QueueEmptyText
 	}
 	cfg.Overlay.LegacyCountWidth = 0
+	cfg.Overlay.Opacity = 0
+	cfg.Overlay.GradientRange = 0
 	cfg.SchemaVersion = def.SchemaVersion
 }
 
@@ -839,6 +957,9 @@ func (a *App) routes() http.Handler {
 	})
 	mux.HandleFunc("/control", serveEmbedded("web/control.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/overlay", serveEmbedded("web/overlay.html", "text/html; charset=utf-8"))
+
+	mux.HandleFunc("/api/fonts", a.handleFonts)
+	mux.HandleFunc("/fonts/", a.handleFontFile)
 
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
