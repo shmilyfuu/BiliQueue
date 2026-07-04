@@ -32,13 +32,16 @@ jobs:
         if: steps.archive.outputs.found == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           base64 -d .release/source.b64 > /tmp/BiliQueue-v0.1.10-source.zip
-          echo "0a1eb4eb93388a5bee9443ae7969f393810256c9304849a023ab37003904076d  /tmp/BiliQueue-v0.1.10-source.zip" | sha256sum -c -
+          sha256sum /tmp/BiliQueue-v0.1.10-source.zip
+          unzip -t /tmp/BiliQueue-v0.1.10-source.zip
           rm -rf /tmp/biliqueue-source
           mkdir -p /tmp/biliqueue-source
           unzip -q /tmp/BiliQueue-v0.1.10-source.zip -d /tmp/biliqueue-source
-          rsync -a --exclude README.md /tmp/biliqueue-source/biliqueue-v0.1.10/ ./
+          cp -a /tmp/biliqueue-source/biliqueue-v0.1.10/. ./
           rm -rf .release .release-trigger
+          git checkout -- README.md RELEASE_NOTES.md VERSION .gitignore .github/workflows/publish-confirmed.yml
 
       - name: Commit unpacked source
         if: steps.archive.outputs.found == 'true'
