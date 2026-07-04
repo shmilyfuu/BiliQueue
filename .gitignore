@@ -2,6 +2,10 @@
 data/*
 !data/.gitkeep
 
+# 用户字体文件
+fonts/*
+!fonts/.gitkeep
+
 # 构建产物
 *.exe
 *.zip

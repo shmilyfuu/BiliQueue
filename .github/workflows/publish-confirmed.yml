@@ -18,11 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect staged source chunks
+      - name: Detect staged source
         id: archive
         shell: bash
         run: |
-          if compgen -G '.release/chunks/part-*' > /dev/null; then
+          if [[ -f .release/source.b64 ]]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -32,12 +32,12 @@ jobs:
         if: steps.archive.outputs.found == 'true'
         shell: bash
         run: |
-          cat .release/chunks/part-* > /tmp/BiliQueue-v0.1.6-source.zip
-          echo "640e92ee14e9723029d14b2b981f4a669e9dc15553f86696752efde3e96345b3  /tmp/BiliQueue-v0.1.6-source.zip" | sha256sum -c -
+          base64 -d .release/source.b64 > /tmp/BiliQueue-v0.1.10-source.zip
+          echo "0a1eb4eb93388a5bee9443ae7969f393810256c9304849a023ab37003904076d  /tmp/BiliQueue-v0.1.10-source.zip" | sha256sum -c -
           rm -rf /tmp/biliqueue-source
           mkdir -p /tmp/biliqueue-source
-          unzip -q /tmp/BiliQueue-v0.1.6-source.zip -d /tmp/biliqueue-source
-          rsync -a --exclude README.md /tmp/biliqueue-source/biliqueue-v0.1.6/ ./
+          unzip -q /tmp/BiliQueue-v0.1.10-source.zip -d /tmp/biliqueue-source
+          rsync -a --exclude README.md /tmp/biliqueue-source/biliqueue-v0.1.10/ ./
           rm -rf .release .release-trigger
 
       - name: Commit unpacked source
@@ -48,7 +48,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "chore: publish v0.1.6 source"
+            git commit -m "chore: publish v0.1.10 source"
             git push origin HEAD:main
           fi
 
@@ -71,13 +71,14 @@ jobs:
         run: |
           VERSION="$(cat VERSION)"
           PACKAGE="BiliQueue-v${VERSION}-windows-test"
-          mkdir -p "dist/${PACKAGE}/data"
+          SOURCE_PACKAGE="BiliQueue-v${VERSION}-source.zip"
+          mkdir -p "dist/${PACKAGE}/data" "dist/${PACKAGE}/fonts"
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" .
           cp "启动-BiliQueue.cmd" "dist/${PACKAGE}/"
           cp README.md "dist/${PACKAGE}/README-使用说明.md"
-          touch "dist/${PACKAGE}/data/.gitkeep"
+          touch "dist/${PACKAGE}/data/.gitkeep" "dist/${PACKAGE}/fonts/.gitkeep"
           (cd dist && zip -qr "../${PACKAGE}.zip" "${PACKAGE}")
-          cp /tmp/BiliQueue-v0.1.6-source.zip "BiliQueue-v${VERSION}-source.zip"
+          cp /tmp/BiliQueue-v0.1.10-source.zip "${SOURCE_PACKAGE}"
 
       - name: Create GitHub Release
         if: steps.archive.outputs.found == 'true'
