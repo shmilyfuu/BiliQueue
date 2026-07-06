@@ -234,12 +234,8 @@ function prepareAnimatedRow(track, row, html, users, startIndex, settings, prefe
       const pages = buildFittingPages(row, users, startIndex, settings, preferVerticalPages ? Number(settings.queueSecondPageSize || 5) : 999);
       setupFadePages(track, pages, settings);
     } else if (settings.scrollMode === 'paged') {
-      if (preferVerticalPages) {
-        const pages = buildFittingPages(row, users, startIndex, settings, Number(settings.queueSecondPageSize || 5));
-        setupVerticalPages(track, pages, settings);
-      } else {
-        setupHorizontalPaged(track, rowWidth, settings);
-      }
+      const pages = buildFittingPages(row, users, startIndex, settings, preferVerticalPages ? Number(settings.queueSecondPageSize || 5) : 999);
+      setupVerticalPages(track, pages, settings);
     } else {
       track.innerHTML += `<div class="copy" aria-hidden="true">${html}</div>`;
     }

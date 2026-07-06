@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 	"unsafe"
@@ -17,9 +18,12 @@ const (
 	wmNull          = 0x0000
 	wmDestroy       = 0x0002
 	wmClose         = 0x0010
+	wmContextMenu   = 0x007B
 	wmCommand       = 0x0111
 	wmUser          = 0x0400
 	wmAppTray       = wmUser + 1
+	wmAppShowMenu   = wmUser + 2
+	wmRButtonDown   = 0x0204
 	wmRButtonUp     = 0x0205
 	wmLButtonDblClk = 0x0203
 
@@ -145,17 +149,22 @@ type notifyIconData struct {
 }
 
 type trayApp struct {
-	app        *App
-	controller *ServerController
-	dataDir    string
-	hwnd       uintptr
-	hIcon      uintptr
-	customIcon bool
+	app         *App
+	controller  *ServerController
+	dataDir     string
+	hwnd        uintptr
+	hIcon       uintptr
+	customIcon  bool
+	menuOpen    bool
+	menuPending bool
+	exiting     bool
 }
 
 var activeTray *trayApp
 
 func runTray(app *App, controller *ServerController, dataDir string) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	className, _ := syscall.UTF16PtrFromString("BiliQueueTrayWindow")
 	windowName, _ := syscall.UTF16PtrFromString("BiliQueue")
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
@@ -214,11 +223,25 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if t == nil {
 			break
 		}
-		switch uint32(lParam) {
-		case wmRButtonUp:
-			t.showMenu()
+		trayMessage := uint32(lParam)
+		log.Printf("tray callback message: 0x%x", trayMessage)
+		switch trayMessage {
+		case wmRButtonDown, wmRButtonUp, wmContextMenu:
+			t.requestMenu()
 		case wmLButtonDblClk:
 			go t.openControl()
+		}
+		return 0
+	case wmContextMenu:
+		if t != nil {
+			log.Printf("tray window context menu message")
+			t.requestMenu()
+		}
+		return 0
+	case wmAppShowMenu:
+		if t != nil {
+			t.menuPending = false
+			t.showMenu()
 		}
 		return 0
 	case wmCommand:
@@ -286,7 +309,20 @@ func (t *trayApp) removeIcon() {
 	}
 }
 
+func (t *trayApp) requestMenu() {
+	if t == nil || t.exiting || t.menuOpen || t.menuPending {
+		return
+	}
+	t.menuPending = true
+	procPostMessageW.Call(t.hwnd, wmAppShowMenu, 0, 0)
+}
+
 func (t *trayApp) showMenu() {
+	if t == nil || t.exiting || t.menuOpen {
+		return
+	}
+	t.menuOpen = true
+	defer func() { t.menuOpen = false }()
 	menu, _, _ := procCreatePopupMenu.Call()
 	if menu == 0 {
 		return
@@ -359,8 +395,11 @@ func (t *trayApp) handleMenu(id uint16) {
 		openPath(filepath.Join(t.dataDir, "logs", "biliqueue.log"))
 	case menuExit:
 		log.Printf("tray exit requested")
-		closeActivePrompt()
-		procPostMessageW.Call(t.hwnd, wmClose, 0, 0)
+		if !t.exiting {
+			t.exiting = true
+			closeActivePrompt()
+			procPostMessageW.Call(t.hwnd, wmClose, 0, 0)
+		}
 	}
 }
 

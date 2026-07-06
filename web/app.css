@@ -277,3 +277,11 @@ button { cursor: pointer; }
   min-width:auto;
   text-align:center;
 }
+
+/* mini-control only keeps queue management */
+.mini-shell { max-width: 920px; }
+.mini-shell .topbar { margin-bottom: 16px; }
+.mini-queue-card .queue-list { max-height: calc(100vh - 355px); min-height: 220px; }
+@media (max-width: 650px) {
+  .mini-queue-card .queue-list { max-height: none; min-height: 0; }
+}
