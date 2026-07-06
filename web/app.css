@@ -285,3 +285,12 @@ button { cursor: pointer; }
 @media (max-width: 650px) {
   .mini-queue-card .queue-list { max-height: none; min-height: 0; }
 }
+
+/* v0.1.12-test23 top card alignment and moved service block */
+.service-card + .text-editor-card { margin-top:18px; }
+.top-sync-card { display:flex; flex-direction:column; }
+.top-sync-card > .card-body { flex:1; }
+@media (max-width:1120px) {
+  .connection-card,
+  .service-card { min-height:0 !important; }
+}

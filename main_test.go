@@ -303,16 +303,16 @@ func TestGiftPriority(t *testing.T) {
 		t.Fatalf("existing priority user moved unexpectedly: %#v", queue)
 	}
 
-	// 新用户进入礼物优先区末尾。
+	// 未排队用户送礼只记录最近礼物，不加入队列。
 	a.processGift(GiftMessage{EventID: "gift-4", UID: 5, Username: "新用户", GiftName: "礼物", CoinType: "gold", Battery: 100})
 	queue = a.state().Queue
-	if len(queue) != 5 || queue[1].UID != 4 || queue[2].UID != 3 || queue[3].UID != 5 || queue[4].UID != 2 {
-		t.Fatalf("new priority user append failed: %#v", queue)
+	if len(queue) != 4 || queue[1].UID != 4 || queue[2].UID != 3 || queue[3].UID != 2 {
+		t.Fatalf("non-queued gift user should not be appended: %#v", queue)
 	}
 
 	// 免费礼物不进入队列。
 	a.processGift(GiftMessage{EventID: "gift-5", UID: 6, Username: "免费礼物", GiftName: "免费礼物", CoinType: "silver", Battery: 999})
-	if len(a.state().Queue) != 5 {
+	if len(a.state().Queue) != 4 {
 		t.Fatal("free gift entered queue")
 	}
 }
@@ -326,6 +326,9 @@ func TestGiftPrioritySortBySingleGiftValue(t *testing.T) {
 
 	a.processMessage(ChatMessage{UID: 1, Username: "当前", Text: "排队"})
 	a.processMessage(ChatMessage{UID: 2, Username: "普通", Text: "排队"})
+	a.processMessage(ChatMessage{UID: 3, Username: "一百", Text: "排队"})
+	a.processMessage(ChatMessage{UID: 4, Username: "三百", Text: "排队"})
+	a.processMessage(ChatMessage{UID: 5, Username: "二百", Text: "排队"})
 	a.processGift(GiftMessage{EventID: "sort-1", UID: 3, Username: "一百", GiftName: "礼物", CoinType: "gold", Battery: 100})
 	a.processGift(GiftMessage{EventID: "sort-2", UID: 4, Username: "三百", GiftName: "礼物", CoinType: "gold", Battery: 300})
 	a.processGift(GiftMessage{EventID: "sort-3", UID: 5, Username: "二百", GiftName: "礼物", CoinType: "gold", Battery: 200})
@@ -382,10 +385,10 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	a := newApp(dir)
 	cfg := a.state().Config
-	if cfg.SchemaVersion != 8 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
+	if cfg.SchemaVersion != 11 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
 		t.Fatalf("legacy widths not migrated: %#v", cfg.Overlay)
 	}
-	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.DoubleLineThreshold != 8 {
+	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.QueuePageSize != 5 || !cfg.Overlay.DoubleLineEnabled {
 		t.Fatalf("legacy layout defaults not applied: %#v", cfg.Overlay)
 	}
 	if cfg.GiftPriority.Enabled {
@@ -442,7 +445,7 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	cfg.Overlay.ShortAlign = "center"
 	cfg.Overlay.EmptyText = "排队空闲中"
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 8 {
+	if cfg.SchemaVersion != 11 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.CurrentFontSize != 30 || cfg.Overlay.QueueFontSize != 30 {
@@ -505,7 +508,7 @@ func TestV6GradientRangeMigratesToStartEnd(t *testing.T) {
 	cfg.Overlay.GradientStart = 0
 	cfg.Overlay.GradientEnd = 0
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 8 {
+	if cfg.SchemaVersion != 11 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.GradientStart != 50 || cfg.Overlay.GradientEnd != 100 {

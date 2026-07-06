@@ -16,23 +16,23 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':
 
 const displayVersion = value => String(value || '').replace(/-test\d+$/i, '');
 const DEFAULT_OVERLAY = {
-  height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',
-  queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueFontFile:'',queueFontWeight:500,
-  infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
-  speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,
+  height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentTextStrokeWidth:0,currentTextStrokeColor:'#000000',currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',currentBadgeText:'当前',currentBadgeTextColor:'#ffffff',currentBadgeBackground:'#6577ed',currentBadgeOpacity:.92,currentBadgeFontSize:11,currentBadgeRadius:8,currentBadgeOffsetX:-6,currentBadgeOffsetY:-6,
+  queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueTextStrokeWidth:0,queueTextStrokeColor:'#000000',queueFontFile:'',queueFontWeight:500,
+  infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoTextStrokeWidth:0,infoTextStrokeColor:'#000000',infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
+  speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,currentAvatarSize:32,queueAvatarSize:32,currentAvatarNameGap:12,queueAvatarNameGap:10,
   currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
   showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,
-  scrollMode:'continuous',shortAlign:'center',currentWidth:300,queueWidth:1220,infoWidth:400,
-  queueLineGap:8,queueItemGap:22,queueSecondPageSize:5,infoLineGap:4,doubleLineThreshold:8,
+  scrollMode:'continuous',shortAlign:'center',currentWidth:300,currentSidePadding:20,queueWidth:1220,infoWidth:400,
+  queueLineGap:8,queueItemGap:22,queuePageSize:5,infoLineGap:4,doubleLineEnabled:true,
   infoText:'弹幕发送“排队”加入\n达到礼物门槛可进入优先队列',emptyText:'排队空闲中',queueEmptyText:'空'
 };
 
 const RESET_GROUPS = {
   banner: ['height','radius','currentWidth','queueWidth','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
-  queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','avatarSize','doubleLineThreshold','queueLineGap','queueItemGap','queueSecondPageSize','showAvatar','showGiftIcon'],
-  currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentFontFile','currentFontWeight','currentTextAlign','currentBackground','currentBackgroundOpacity'],
-  queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueFontFile','queueFontWeight','queueBackground','queueBackgroundOpacity'],
-  infoArea: ['infoFontSize','infoTextColor','infoTextOpacity','infoFontFile','infoFontWeight','infoTextAlign','infoLineGap','infoBackground','infoBackgroundOpacity'],
+  queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','doubleLineEnabled','queueLineGap','queueItemGap','queuePageSize','showAvatar','showGiftIcon'],
+  currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentTextStrokeWidth','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentSidePadding','currentAvatarSize','currentAvatarNameGap','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOpacity','currentBadgeFontSize','currentBadgeRadius','currentBadgeOffsetX','currentBadgeOffsetY','currentBackground','currentBackgroundOpacity'],
+  queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueTextStrokeWidth','queueTextStrokeColor','queueFontFile','queueFontWeight','queueAvatarSize','queueAvatarNameGap','queueBackground','queueBackgroundOpacity'],
+  infoArea: ['infoFontSize','infoTextColor','infoTextOpacity','infoTextStrokeWidth','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','infoLineGap','infoBackground','infoBackgroundOpacity'],
 };
 RESET_GROUPS.textArea = [...RESET_GROUPS.currentArea, ...RESET_GROUPS.queueArea, ...RESET_GROUPS.infoArea];
 
@@ -67,21 +67,32 @@ const numericPairs = {
   gradientBottomOpacity: 'gradientBottomOpacityValue',
   gradientStart: 'gradientStartValue',
   gradientEnd: 'gradientEndValue',
-  avatarSize: 'avatarSizeValue',
+  currentAvatarSize: 'currentAvatarSizeValue',
+  queueAvatarSize: 'queueAvatarSizeValue',
+  currentAvatarNameGap: 'currentAvatarNameGapValue',
+  currentBadgeOpacity: 'currentBadgeOpacityValue',
+  currentBadgeFontSize: 'currentBadgeFontSizeValue',
+  currentBadgeRadius: 'currentBadgeRadiusValue',
+  currentBadgeOffsetX: 'currentBadgeOffsetXValue',
+  currentBadgeOffsetY: 'currentBadgeOffsetYValue',
+  queueAvatarNameGap: 'queueAvatarNameGapValue',
   currentTextOpacity: 'currentTextOpacityValue',
+  currentTextStrokeWidth: 'currentTextStrokeWidthValue',
   queueTextOpacity: 'queueTextOpacityValue',
+  queueTextStrokeWidth: 'queueTextStrokeWidthValue',
   infoTextOpacity: 'infoTextOpacityValue',
+  infoTextStrokeWidth: 'infoTextStrokeWidthValue',
   currentBackgroundOpacity: 'currentBackgroundOpacityValue',
   queueBackgroundOpacity: 'queueBackgroundOpacityValue',
   infoBackgroundOpacity: 'infoBackgroundOpacityValue',
   radius: 'radiusValue',
   currentWidth: 'currentWidthValue',
+  currentSidePadding: 'currentSidePaddingValue',
   queueWidth: 'queueWidthValue',
   infoWidth: 'infoWidthValue',
-  doubleLineThreshold: 'doubleLineThresholdValue',
   queueLineGap: 'queueLineGapValue',
   queueItemGap: 'queueItemGapValue',
-  queueSecondPageSize: 'queueSecondPageSizeValue',
+  queuePageSize: 'queuePageSizeValue',
   infoLineGap: 'infoLineGapValue',
 };
 
@@ -162,6 +173,7 @@ function initCollapsibles() {
       root.classList.toggle('is-collapsed', !open);
       toggle.textContent = open ? '收起' : '展开';
       toggle.setAttribute('aria-expanded', String(open));
+      requestAnimationFrame(syncTopCardHeights);
     };
     setOpen(openByDefault);
 
@@ -201,6 +213,23 @@ function markTextDraftDirty() {
   updateTextDraftStatus();
 }
 
+function syncTopCardHeights() {
+  const left = document.querySelector('.connection-card');
+  const right = document.querySelector('.service-card');
+  if (!left || !right || window.matchMedia('(max-width: 1120px)').matches) {
+    if (left) left.style.minHeight = '';
+    if (right) right.style.minHeight = '';
+    return;
+  }
+  left.style.minHeight = '';
+  right.style.minHeight = '';
+  const h = Math.max(left.getBoundingClientRect().height, right.getBoundingClientRect().height);
+  if (h > 0) {
+    left.style.minHeight = `${Math.ceil(h)}px`;
+    right.style.minHeight = `${Math.ceil(h)}px`;
+  }
+}
+
 function avatarHTML(user) {
   const initial = escapeHtml((user?.username || '?').slice(0, 1));
   if (user?.avatar) {
@@ -227,7 +256,7 @@ function render(nextState) {
   $('statusText').textContent = labels[status] || status;
   $('connectionDetail').textContent = state.connectionDetail || '—';
   $('realRoomId').textContent = state.resolvedRoomId || '—';
-  $('anchorName').textContent = state.anchorName || '—';
+  $('anchorName').textContent = state.anchorName ? `${state.anchorName}${state.anchorUid ? ` · UID ${state.anchorUid}` : ''}` : (state.anchorUid ? `UID ${state.anchorUid}` : '—');
   $('roomTitle').textContent = state.roomTitle || '—';
   if ($('appVersion')) $('appVersion').textContent = `v${displayVersion(state.version)}`;
   const loggedIn = state.loginStatus === 'logged_in';
@@ -248,6 +277,7 @@ function render(nextState) {
   renderQueue();
   renderLogs();
   fillSettings(cfg, firstRender);
+  requestAnimationFrame(syncTopCardHeights);
 }
 
 function renderCurrent() {
@@ -348,7 +378,9 @@ function renderLogs() {
     return;
   }
   const amount = Number(gift.battery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
-  const result = gift.coinType === 'gold' && gift.battery >= state.config.giftPriority.thresholdBattery && state.config.giftPriority.enabled ? '，已触发插队' : '';
+  const eligible = gift.coinType === 'gold' && gift.battery >= state.config.giftPriority.thresholdBattery && state.config.giftPriority.enabled;
+  const queuedPriority = state.queue.some(user => Number(user.uid) === Number(gift.uid) && user.priority);
+  const result = eligible ? (queuedPriority ? '，已触发插队' : '，送礼用户未在队列中，仅记录') : '';
   $('lastGift').textContent = `最近礼物：${gift.username} 送出 ${gift.giftName} × ${gift.num}，约 ${amount} 电池${result}`;
 }
 
@@ -363,7 +395,7 @@ function setPair(id, value, force = false) {
 }
 
 function fillSettings(cfg, force) {
-  for (const id of ['joinCommand','cancelCommand','clearCommand','maxQueue']) {
+  for (const id of ['joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue']) {
     if (force || document.activeElement !== $(id)) $(id).value = cfg[id];
   }
   if (force || document.activeElement !== $('giftThresholdBattery')) $('giftThresholdBattery').value = cfg.giftPriority?.thresholdBattery ?? 100;
@@ -383,21 +415,32 @@ function fillSettings(cfg, force) {
   setPair('gradientBottomOpacity', Math.round(o.gradientBottomOpacity * 100), force);
   setPair('gradientStart', o.gradientStart ?? Math.max(0, 100 - (o.gradientRange ?? 100)), force);
   setPair('gradientEnd', o.gradientEnd ?? 100, force);
-  setPair('avatarSize', o.avatarSize ?? 32, force);
+  setPair('currentAvatarSize', o.currentAvatarSize ?? o.avatarSize ?? 32, force);
+  setPair('queueAvatarSize', o.queueAvatarSize ?? o.avatarSize ?? 32, force);
+  setPair('currentAvatarNameGap', o.currentAvatarNameGap ?? 12, force);
+  setPair('currentBadgeOpacity', Math.round((o.currentBadgeOpacity ?? 0.92) * 100), force);
+  setPair('currentBadgeFontSize', o.currentBadgeFontSize ?? 11, force);
+  setPair('currentBadgeRadius', o.currentBadgeRadius ?? 8, force);
+  setPair('currentBadgeOffsetX', o.currentBadgeOffsetX ?? -6, force);
+  setPair('currentBadgeOffsetY', o.currentBadgeOffsetY ?? -6, force);
+  setPair('queueAvatarNameGap', o.queueAvatarNameGap ?? 10, force);
   setPair('currentTextOpacity', Math.round(o.currentTextOpacity * 100), force);
+  setPair('currentTextStrokeWidth', o.currentTextStrokeWidth ?? 0, force);
   setPair('queueTextOpacity', Math.round(o.queueTextOpacity * 100), force);
+  setPair('queueTextStrokeWidth', o.queueTextStrokeWidth ?? 0, force);
   setPair('infoTextOpacity', Math.round(o.infoTextOpacity * 100), force);
+  setPair('infoTextStrokeWidth', o.infoTextStrokeWidth ?? 0, force);
   setPair('currentBackgroundOpacity', Math.round(o.currentBackgroundOpacity * 100), force);
   setPair('queueBackgroundOpacity', Math.round(o.queueBackgroundOpacity * 100), force);
   setPair('infoBackgroundOpacity', Math.round(o.infoBackgroundOpacity * 100), force);
   setPair('radius', o.radius, force);
   setPair('currentWidth', o.currentWidth, force);
+  setPair('currentSidePadding', o.currentSidePadding ?? 20, force);
   setPair('queueWidth', o.queueWidth, force);
   setPair('infoWidth', o.infoWidth, force);
-  setPair('doubleLineThreshold', o.doubleLineThreshold, force);
   setPair('queueLineGap', o.queueLineGap, force);
   setPair('queueItemGap', o.queueItemGap ?? 22, force);
-  setPair('queueSecondPageSize', o.queueSecondPageSize ?? 5, force);
+  setPair('queuePageSize', o.queuePageSize ?? o.queueSecondPageSize ?? 5, force);
   setPair('infoLineGap', o.infoLineGap, force);
 
   const plain = {
@@ -405,13 +448,19 @@ function fillSettings(cfg, force) {
     scrollMode:o.scrollMode,
     shortAlign:o.shortAlign,
     currentTextColor:o.currentTextColor,
+    currentTextStrokeColor:o.currentTextStrokeColor || '#000000',
     currentFontFile:o.currentFontFile,
     currentFontWeight:o.currentFontWeight,
     currentTextAlign:o.currentTextAlign,
+    currentBadgeText:o.currentBadgeText || '当前',
+    currentBadgeTextColor:o.currentBadgeTextColor || '#ffffff',
+    currentBadgeBackground:o.currentBadgeBackground || '#6577ed',
     queueTextColor:o.queueTextColor,
+    queueTextStrokeColor:o.queueTextStrokeColor || '#000000',
     queueFontFile:o.queueFontFile,
     queueFontWeight:o.queueFontWeight,
     infoTextColor:o.infoTextColor,
+    infoTextStrokeColor:o.infoTextStrokeColor || '#000000',
     infoFontFile:o.infoFontFile,
     infoFontWeight:o.infoFontWeight,
     infoTextAlign:o.infoTextAlign,
@@ -444,6 +493,7 @@ function fillSettings(cfg, force) {
   $('showCount').checked = Boolean(o.showCount);
   $('showRules').checked = Boolean(o.showRules);
   $('showGiftIcon').checked = Boolean(o.showGiftIcon);
+  if ($('doubleLineEnabled')) $('doubleLineEnabled').checked = o.doubleLineEnabled !== false;
   updateSizeHint();
 }
 
@@ -459,13 +509,14 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: 8,
+    schemaVersion: 11,
     listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     queueEnabled: $('queueEnabled')?.value !== 'false',
     joinCommand: $('joinCommand').value.trim() || '排队',
     cancelCommand: $('cancelCommand').value.trim() || '取消排队',
     clearCommand: $('clearCommand').value.trim() || '清空队列',
+    nextCommand: $('nextCommand').value.trim() || '下一位',
     maxQueue: Number($('maxQueue').value) || 100,
     giftPriority: {
       enabled: $('giftPriorityEnabled').checked,
@@ -478,17 +529,31 @@ function collectConfig(options = {}) {
       currentFontSize: Number($('currentFontSize').value),
       currentTextColor: $('currentTextColor').value,
       currentTextOpacity: Number($('currentTextOpacity').value) / 100,
+      currentTextStrokeWidth: Number($('currentTextStrokeWidth').value || 0),
+      currentTextStrokeColor: $('currentTextStrokeColor').value,
       currentFontFile: $('currentFontFile').value,
       currentFontWeight: Number($('currentFontWeight').value),
       currentTextAlign: $('currentTextAlign').value,
+      currentBadgeText: $('currentBadgeText').value.trim() || '当前',
+      currentBadgeTextColor: $('currentBadgeTextColor').value,
+      currentBadgeBackground: $('currentBadgeBackground').value,
+      currentBadgeOpacity: Number($('currentBadgeOpacity').value) / 100,
+      currentBadgeFontSize: Number($('currentBadgeFontSize').value),
+      currentBadgeRadius: Number($('currentBadgeRadius').value),
+      currentBadgeOffsetX: Number($('currentBadgeOffsetX').value),
+      currentBadgeOffsetY: Number($('currentBadgeOffsetY').value),
       queueFontSize: Number($('queueFontSize').value),
       queueTextColor: $('queueTextColor').value,
       queueTextOpacity: Number($('queueTextOpacity').value) / 100,
+      queueTextStrokeWidth: Number($('queueTextStrokeWidth').value || 0),
+      queueTextStrokeColor: $('queueTextStrokeColor').value,
       queueFontFile: $('queueFontFile').value,
       queueFontWeight: Number($('queueFontWeight').value),
       infoFontSize: Number($('infoFontSize').value),
       infoTextColor: $('infoTextColor').value,
       infoTextOpacity: Number($('infoTextOpacity').value) / 100,
+      infoTextStrokeWidth: Number($('infoTextStrokeWidth').value || 0),
+      infoTextStrokeColor: $('infoTextStrokeColor').value,
       infoFontFile: $('infoFontFile').value,
       infoFontWeight: Number($('infoFontWeight').value),
       infoTextAlign: $('infoTextAlign').value,
@@ -500,7 +565,11 @@ function collectConfig(options = {}) {
       gradientBottomOpacity: Number($('gradientBottomOpacity').value) / 100,
       gradientStart: Number($('gradientStart').value),
       gradientEnd: Number($('gradientEnd').value),
-      avatarSize: Number($('avatarSize').value),
+      avatarSize: Number($('queueAvatarSize').value),
+      currentAvatarSize: Number($('currentAvatarSize').value),
+      queueAvatarSize: Number($('queueAvatarSize').value),
+      currentAvatarNameGap: Number($('currentAvatarNameGap').value),
+      queueAvatarNameGap: Number($('queueAvatarNameGap').value),
       currentBackground: $('currentBackground').value,
       currentBackgroundOpacity: Number($('currentBackgroundOpacity').value) / 100,
       queueBackground: $('queueBackground').value,
@@ -515,13 +584,14 @@ function collectConfig(options = {}) {
       scrollMode: $('scrollMode').value,
       shortAlign: $('shortAlign').value,
       currentWidth: Number($('currentWidth').value),
+      currentSidePadding: Number($('currentSidePadding').value),
       queueWidth: Number($('queueWidth').value),
       infoWidth: Number($('infoWidth').value),
       queueLineGap: Number($('queueLineGap').value),
       queueItemGap: Number($('queueItemGap').value),
-      queueSecondPageSize: Number($('queueSecondPageSize').value),
+      queuePageSize: Number($('queuePageSize').value),
       infoLineGap: Number($('infoLineGap').value),
-      doubleLineThreshold: Number($('doubleLineThreshold').value),
+      doubleLineEnabled: $('doubleLineEnabled').checked,
       infoText: includeTextDrafts ? $('infoText').value : (currentOverlay.infoText ?? $('infoText').value),
       emptyText: includeTextDrafts ? ($('emptyText').value.trim() || '排队空闲中') : ((currentOverlay.emptyText ?? $('emptyText').value.trim()) || '排队空闲中'),
       queueEmptyText: includeTextDrafts ? ($('queueEmptyText').value.trim() || '空') : ((currentOverlay.queueEmptyText ?? $('queueEmptyText').value.trim()) || '空'),
@@ -709,6 +779,7 @@ async function changeListenAddress() {
 
 async function init() {
   initCollapsibles();
+  window.addEventListener('resize', syncTopCardHeights);
   $('obsUrl').textContent = `${location.origin}/overlay`;
   const initial = await fetch('/api/state').then(r => r.json());
   render(initial);
@@ -767,7 +838,7 @@ async function init() {
     await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
   });
 
-  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
+  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
   settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
   settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
   deferredTextIds.forEach(id => $(id).addEventListener('input', markTextDraftDirty));
@@ -811,9 +882,9 @@ async function init() {
     }
   }
   const resetBindings = [
-    ['resetBannerStyleBtn','banner','条幅大小与样式'],
+    ['resetBannerStyleBtn','banner','大小与样式'],
     ['resetQueueStyleBtn','queueStyle','队列调整与样式'],
-    ['resetTextAreaBtn','textArea','文字区域'],
+    ['resetTextAreaBtn','textArea','文字区域样式'],
     ['resetCurrentAreaBtn','currentArea','当前区域'],
     ['resetQueueAreaBtn','queueArea','队列区域'],
     ['resetInfoAreaBtn','infoArea','说明区域'],

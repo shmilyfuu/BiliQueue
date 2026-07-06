@@ -117,6 +117,7 @@ func (b *BiliClient) Run(ctx context.Context, roomInput string, onStatus func(Co
 			RoomID:     session.RoomID,
 			RoomTitle:  session.RoomTitle,
 			AnchorName: session.AnchorName,
+			AnchorUID:  session.AnchorUID,
 		})
 		err = b.connectOnce(ctx, session, func(detail string) {
 			onStatus(ConnectionUpdate{
@@ -139,6 +140,7 @@ func (b *BiliClient) Run(ctx context.Context, roomInput string, onStatus func(Co
 			RoomID:     session.RoomID,
 			RoomTitle:  session.RoomTitle,
 			AnchorName: session.AnchorName,
+			AnchorUID:  session.AnchorUID,
 		})
 		if !sleepContext(ctx, delay) {
 			return
@@ -372,24 +374,31 @@ func sanitizeWBIValue(value string) string {
 
 func (b *BiliClient) fetchRoomMetadata(ctx context.Context, roomID int64, cookie string) (string, string, int64) {
 	var resp struct {
-		Code int `json:"code"`
-		Data struct {
-			RoomInfo struct {
-				Title string `json:"title"`
-			} `json:"room_info"`
-			AnchorInfo struct {
-				BaseInfo struct {
-					Uname string `json:"uname"`
-					UID   int64  `json:"uid"`
-				} `json:"base_info"`
-			} `json:"anchor_info"`
-		} `json:"data"`
+		Code int            `json:"code"`
+		Data map[string]any `json:"data"`
 	}
 	u := fmt.Sprintf("https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id=%d", roomID)
 	if err := b.getJSON(ctx, u, cookie, &resp); err != nil || resp.Code != 0 {
 		return "", "", 0
 	}
-	return resp.Data.RoomInfo.Title, resp.Data.AnchorInfo.BaseInfo.Uname, resp.Data.AnchorInfo.BaseInfo.UID
+
+	roomInfo, _ := resp.Data["room_info"].(map[string]any)
+	anchorInfo, _ := resp.Data["anchor_info"].(map[string]any)
+	baseInfo, _ := anchorInfo["base_info"].(map[string]any)
+
+	title := firstString(roomInfo, "title")
+	anchorName := firstString(baseInfo, "uname", "name")
+	if anchorName == "" {
+		anchorName = firstString(anchorInfo, "uname", "name")
+	}
+	anchorUID := firstInt64(roomInfo, "uid", "anchor_uid", "up_uid")
+	if anchorUID == 0 {
+		anchorUID = firstInt64(baseInfo, "uid", "mid")
+	}
+	if anchorUID == 0 {
+		anchorUID = firstInt64(anchorInfo, "uid", "mid", "anchor_uid")
+	}
+	return title, anchorName, anchorUID
 }
 
 func (b *BiliClient) getJSON(ctx context.Context, endpoint, cookie string, out any) error {

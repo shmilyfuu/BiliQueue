@@ -33,7 +33,7 @@
 
     <div class="grid">
       <section>
-        <article class="card collapsible-card" data-collapsible data-default-open="true">
+        <article class="card collapsible-card top-sync-card connection-card" data-collapsible data-default-open="true">
           <div class="card-header"><h2>直播间连接</h2></div>
           <div class="card-body">
             <div class="login-panel">
@@ -91,44 +91,9 @@
       </section>
 
       <section>
-        <article class="card text-editor-card collapsible-card" data-collapsible data-default-open="true">
-          <div class="card-header"><h2>横条文字内容</h2><span id="textDraftStatus" class="draft-status synced">已同步</span></div>
-          <div class="card-body">
-            <div class="field"><label>当前区域无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
-            <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
-            <div class="field"><label>右侧说明内容</label><textarea id="infoText" rows="2" placeholder="支持手动换行和自动换行"></textarea></div>
-            <div class="text-editor-options">
-              <label class="checkbox-row"><input id="showCount" type="checkbox">显示第一行队列人数</label>
-              <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
-            </div>
-            <div class="text-editor-actions">
-              <span class="setting-note">文字编辑不会实时同步，确认后再应用。</span>
-              <div class="row text-buttons">
-                <button id="applyTextBtn" class="btn primary">应用文字到横条</button>
-                <button id="discardTextBtn" class="btn ghost">放弃未应用修改</button>
-              </div>
-            </div>
-          </div>
-        </article>
+        
 
-        <article class="card collapsible-card" data-collapsible data-default-open="true" style="margin-top:18px">
-          <div class="card-header"><h2>排队与礼物规则</h2></div>
-          <div class="card-body">
-            <div class="settings-grid">
-              <div class="field"><label>是否开启排队</label><select id="queueEnabled"><option value="true">开启排队</option><option value="false">关闭排队</option></select></div>
-              <div class="field"><label>主播清空队列指令</label><input id="clearCommand" type="text" placeholder="清空队列"></div>
-              <div class="field"><label>加入指令</label><input id="joinCommand" type="text"></div>
-              <div class="field"><label>取消指令</label><input id="cancelCommand" type="text"></div>
-              <div class="field"><label>最大人数</label><input id="maxQueue" type="number" min="1" max="1000"></div>
-              <div class="field"><label>礼物门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
-            </div>
-            <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
-            <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物价值大的排在礼物价值小的前面</label>
-            <p class="setting-note">只判断单次付费礼物总价值，不累计。关闭价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
-          </div>
-        </article>
-
-        <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
+        <article class="card collapsible-card top-sync-card service-card" data-collapsible data-default-open="true">
           <div class="card-header"><h2>配置与服务</h2></div>
           <div class="card-body">
             <div class="settings-grid">
@@ -145,13 +110,51 @@
           </div>
         </article>
 
+        <article class="card text-editor-card collapsible-card" data-collapsible data-default-open="true">
+          <div class="card-header"><h2>文字编辑区</h2><span id="textDraftStatus" class="draft-status synced">已同步</span></div>
+          <div class="card-body">
+            <div class="field"><label>当前区域无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
+            <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
+            <div class="field"><label>右侧说明内容</label><textarea id="infoText" rows="2" placeholder="支持手动换行和自动换行"></textarea></div>
+            <div class="text-editor-options">
+              <label class="checkbox-row"><input id="showCount" type="checkbox">显示队列数</label>
+              <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
+            </div>
+            <div class="text-editor-actions">
+              <span class="setting-note">文字编辑不会实时同步，确认后再应用。</span>
+              <div class="row text-buttons">
+                <button id="applyTextBtn" class="btn primary">应用</button>
+                <button id="discardTextBtn" class="btn ghost">放弃修改并恢复</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card collapsible-card" data-collapsible data-default-open="true" style="margin-top:18px">
+          <div class="card-header"><h2>排队与礼物规则</h2></div>
+          <div class="card-body">
+            <div class="settings-grid">
+              <div class="field"><label>是否开启排队</label><select id="queueEnabled"><option value="true">开启排队</option><option value="false">关闭排队</option></select></div>
+              <div class="field"><label>最大人数</label><input id="maxQueue" type="number" min="1" max="1000"></div>
+              <div class="field"><label>主播清空队列指令</label><input id="clearCommand" type="text" placeholder="清空队列"></div>
+              <div class="field"><label>主播下一位指令</label><input id="nextCommand" type="text" placeholder="下一位"></div>
+              <div class="field"><label>加入指令</label><input id="joinCommand" type="text"></div>
+              <div class="field"><label>取消指令</label><input id="cancelCommand" type="text"></div>
+              <div class="field"><label>礼物门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
+            </div>
+            <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
+            <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物价值大的排在礼物价值小的前面</label>
+            <p class="setting-note">只判断单次付费礼物总价值，不累计。关闭价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
+          </div>
+        </article>
+
         <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
-          <div class="card-header"><h2>条幅大小与样式</h2><button id="resetBannerStyleBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
+          <div class="card-header"><h2>大小与样式</h2><button id="resetBannerStyleBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
 <div class="settings-grid">
-<div class="field"><label>横条统一高度</label><div class="range-line"><input id="height" max="320" min="64" type="range"/><div class="value-box"><input id="heightValue" max="320" min="64" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>统一高度</label><div class="range-line"><input id="height" max="320" min="50" type="range"/><div class="value-box"><input id="heightValue" max="320" min="50" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>圆角</label><div class="range-line"><input id="radius" max="80" min="0" type="range"/><div class="value-box"><input id="radiusValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前区域宽度</label><div class="range-line"><input id="currentWidth" max="800" min="160" type="range"/><div class="value-box"><input id="currentWidthValue" max="800" min="160" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>左侧当前区域宽度</label><div class="range-line"><input id="currentWidth" max="800" min="160" type="range"/><div class="value-box"><input id="currentWidthValue" max="800" min="160" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>队列区域宽度</label><div class="range-line"><input id="queueWidth" max="2400" min="320" type="range"/><div class="value-box"><input id="queueWidthValue" max="2400" min="320" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>右侧说明区域宽度</label><div class="range-line"><input id="infoWidth" max="1000" min="180" type="range"/><div class="value-box"><input id="infoWidthValue" max="1000" min="180" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>全局背景颜色</label><input id="background" type="color"/></div>
@@ -174,22 +177,22 @@
 <div class="field"><label>连续滚动速度</label><div class="range-line"><input id="speed" max="200" min="0" step="1" type="range"/><div class="value-box"><input id="speedValue" max="200" min="0" step="1" type="number"/><span>px/s</span></div></div></div>
 <div class="field"><label>分页/淡入停留时间</label><div class="range-line"><input id="effectInterval" max="20" min="1" step="0.1" type="range"/><div class="value-box"><input id="effectIntervalValue" max="20" min="1" step="0.1" type="number"/><span>s</span></div></div></div>
 <div class="field"><label>分页/淡入切换耗时</label><div class="range-line"><input id="effectDuration" max="5" min="0.1" step="0.1" type="range"/><div class="value-box"><input id="effectDurationValue" max="5" min="0.1" step="0.1" type="number"/><span>s</span></div></div></div>
-<div class="field"><label>头像大小</label><div class="range-line"><input id="avatarSize" max="96" min="12" type="range"/><div class="value-box"><input id="avatarSizeValue" max="96" min="12" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>双行触发人数</label><div class="range-line"><input id="doubleLineThreshold" max="50" min="1" type="range"/><div class="value-box"><input id="doubleLineThresholdValue" max="50" min="1" type="number"/><span>人</span></div></div></div>
+<div class="field"><label>每行列数</label><div class="range-line"><input id="queuePageSize" max="20" min="1" type="range"/><div class="value-box"><input id="queuePageSizeValue" max="20" min="1" type="number"/><span>列</span></div></div></div>
 <div class="field"><label>队列双行行间距</label><div class="range-line"><input id="queueLineGap" max="60" min="0" type="range"/><div class="value-box"><input id="queueLineGapValue" max="60" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>队列用户间距</label><div class="range-line"><input id="queueItemGap" max="120" min="0" type="range"/><div class="value-box"><input id="queueItemGapValue" max="120" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>第二行每页最多人数</label><div class="range-line"><input id="queueSecondPageSize" max="20" min="1" type="range"/><div class="value-box"><input id="queueSecondPageSizeValue" max="20" min="1" type="number"/><span>人</span></div></div></div>
+<div class="field"><label>列间距</label><div class="range-line"><input id="queueItemGap" max="120" min="0" type="range"/><div class="value-box"><input id="queueItemGapValue" max="120" min="0" type="number"/><span>px</span></div></div></div>
 </div>
 <div class="inline-options">
+<label class="checkbox-row"><input id="doubleLineEnabled" type="checkbox"/>启用队列双行显示</label>
 <label class="checkbox-row"><input id="showAvatar" type="checkbox"/>显示用户头像</label>
 <label class="checkbox-row"><input id="showGiftIcon" type="checkbox"/>显示送出的礼物图标</label>
 </div>
+<p class="setting-note">每行列数会把队列区域固定分成对应列数；列间距同时控制左右留白和列与列之间的距离。用户名超过列宽时会用省略号显示。</p>
 
           </div>
         </article>
 
         <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
-          <div class="card-header"><h2>文字区域</h2><button id="resetTextAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
+          <div class="card-header"><h2>文字区域样式</h2><button id="resetTextAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
 <div class="font-library-row">
 <div><strong>字体文件夹</strong><span>程序目录 / fonts，仅识别 ttf、otf、woff、woff2</span></div>
@@ -201,11 +204,24 @@
 <div class="settings-grid">
 <div class="field"><label>字体</label><select class="font-select" id="currentFontFile"><option value="">默认字体</option></select></div>
 <div class="field"><label>字号</label><div class="range-line"><input id="currentFontSize" max="72" min="12" type="range"/><div class="value-box"><input id="currentFontSizeValue" max="72" min="12" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>字重</label><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+<div class="field"><label>文字对齐方式</label><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
 <div class="field"><label>文字颜色</label><input id="currentTextColor" type="color"/></div>
 <div class="field"><label>文字透明度</label><div class="range-line"><input id="currentTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>字重</label><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
-<div class="field"><label>文字对齐</label><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
+<div class="field"><label>描边颜色</label><input id="currentTextStrokeColor" type="color"/></div>
+<div class="field"><label>描边粗细</label><div class="range-line"><input id="currentTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="currentTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景颜色</label><input id="currentBackground" type="color"/></div>
+<div class="field"><label>当前区域左右留白</label><div class="range-line"><input id="currentSidePadding" max="120" min="0" type="range"/><div class="value-box"><input id="currentSidePaddingValue" max="120" min="0" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前区域头像大小</label><div class="range-line"><input id="currentAvatarSize" max="96" min="12" type="range"/><div class="value-box"><input id="currentAvatarSizeValue" max="96" min="12" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前区域头像文字间距</label><div class="range-line"><input id="currentAvatarNameGap" max="80" min="0" type="range"/><div class="value-box"><input id="currentAvatarNameGapValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前标记文字</label><input id="currentBadgeText" type="text" placeholder="当前"/></div>
+<div class="field"><label>当前标记字号</label><div class="range-line"><input id="currentBadgeFontSize" max="28" min="8" type="range"/><div class="value-box"><input id="currentBadgeFontSizeValue" max="28" min="8" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前标记文字颜色</label><input id="currentBadgeTextColor" type="color"/></div>
+<div class="field"><label>当前标记背景颜色</label><input id="currentBadgeBackground" type="color"/></div>
+<div class="field"><label>当前标记背景透明度</label><div class="range-line"><input id="currentBadgeOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentBadgeOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
+<div class="field"><label>当前标记圆角</label><div class="range-line"><input id="currentBadgeRadius" max="28" min="0" type="range"/><div class="value-box"><input id="currentBadgeRadiusValue" max="28" min="0" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前标记水平偏移</label><div class="range-line"><input id="currentBadgeOffsetX" max="80" min="-80" type="range"/><div class="value-box"><input id="currentBadgeOffsetXValue" max="80" min="-80" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>当前标记垂直偏移</label><div class="range-line"><input id="currentBadgeOffsetY" max="80" min="-80" type="range"/><div class="value-box"><input id="currentBadgeOffsetYValue" max="80" min="-80" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="currentBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
 </div>
 </div>
@@ -216,10 +232,14 @@
 <div class="settings-grid">
 <div class="field"><label>字体</label><select class="font-select" id="queueFontFile"><option value="">默认字体</option></select></div>
 <div class="field"><label>字号</label><div class="range-line"><input id="queueFontSize" max="72" min="12" type="range"/><div class="value-box"><input id="queueFontSizeValue" max="72" min="12" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>字重</label><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
 <div class="field"><label>文字颜色</label><input id="queueTextColor" type="color"/></div>
 <div class="field"><label>文字透明度</label><div class="range-line"><input id="queueTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="queueTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>字重</label><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+<div class="field"><label>描边颜色</label><input id="queueTextStrokeColor" type="color"/></div>
+<div class="field"><label>描边粗细</label><div class="range-line"><input id="queueTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="queueTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景颜色</label><input id="queueBackground" type="color"/></div>
+<div class="field"><label>队列区域头像大小</label><div class="range-line"><input id="queueAvatarSize" max="96" min="12" type="range"/><div class="value-box"><input id="queueAvatarSizeValue" max="96" min="12" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>队列区域头像文字间距</label><div class="range-line"><input id="queueAvatarNameGap" max="80" min="0" type="range"/><div class="value-box"><input id="queueAvatarNameGapValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="queueBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="queueBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
 </div>
 </div>
@@ -230,12 +250,14 @@
 <div class="settings-grid">
 <div class="field"><label>字体</label><select class="font-select" id="infoFontFile"><option value="">默认字体</option></select></div>
 <div class="field"><label>字号</label><div class="range-line"><input id="infoFontSize" max="60" min="10" type="range"/><div class="value-box"><input id="infoFontSizeValue" max="60" min="10" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>字重</label><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
+<div class="field"><label>文字对齐方式</label><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
 <div class="field"><label>文字颜色</label><input id="infoTextColor" type="color"/></div>
 <div class="field"><label>文字透明度</label><div class="range-line"><input id="infoTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="infoTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>字重</label><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
-<div class="field"><label>文字对齐</label><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
-<div class="field"><label>说明文字行间距</label><div class="range-line"><input id="infoLineGap" max="30" min="0" type="range"/><div class="value-box"><input id="infoLineGapValue" max="30" min="0" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>描边颜色</label><input id="infoTextStrokeColor" type="color"/></div>
+<div class="field"><label>描边粗细</label><div class="range-line"><input id="infoTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="infoTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景颜色</label><input id="infoBackground" type="color"/></div>
+<div class="field"><label>说明文字行间距</label><div class="range-line"><input id="infoLineGap" max="30" min="0" type="range"/><div class="value-box"><input id="infoLineGapValue" max="30" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>区域背景透明度</label><div class="range-line"><input id="infoBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="infoBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
 </div>
 </div>

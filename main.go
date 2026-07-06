@@ -34,19 +34,33 @@ type OverlayStyle struct {
 	CurrentTextColor         string  `json:"currentTextColor"`
 	CurrentFontWeight        int     `json:"currentFontWeight"`
 	CurrentTextAlign         string  `json:"currentTextAlign"`
+	CurrentBadgeText         string  `json:"currentBadgeText"`
+	CurrentBadgeTextColor    string  `json:"currentBadgeTextColor"`
+	CurrentBadgeBackground   string  `json:"currentBadgeBackground"`
+	CurrentBadgeOpacity      float64 `json:"currentBadgeOpacity"`
+	CurrentBadgeFontSize     int     `json:"currentBadgeFontSize"`
+	CurrentBadgeRadius       int     `json:"currentBadgeRadius"`
+	CurrentBadgeOffsetX      int     `json:"currentBadgeOffsetX"`
+	CurrentBadgeOffsetY      int     `json:"currentBadgeOffsetY"`
 	CurrentFontFile          string  `json:"currentFontFile,omitempty"`
 	CurrentTextOpacity       float64 `json:"currentTextOpacity"`
+	CurrentTextStrokeWidth   int     `json:"currentTextStrokeWidth"`
+	CurrentTextStrokeColor   string  `json:"currentTextStrokeColor"`
 	QueueFontSize            int     `json:"queueFontSize"`
 	QueueTextColor           string  `json:"queueTextColor"`
 	QueueFontWeight          int     `json:"queueFontWeight"`
 	QueueFontFile            string  `json:"queueFontFile,omitempty"`
 	QueueTextOpacity         float64 `json:"queueTextOpacity"`
+	QueueTextStrokeWidth     int     `json:"queueTextStrokeWidth"`
+	QueueTextStrokeColor     string  `json:"queueTextStrokeColor"`
 	InfoFontSize             int     `json:"infoFontSize"`
 	InfoTextColor            string  `json:"infoTextColor"`
 	InfoFontWeight           int     `json:"infoFontWeight"`
 	InfoTextAlign            string  `json:"infoTextAlign"`
 	InfoFontFile             string  `json:"infoFontFile,omitempty"`
 	InfoTextOpacity          float64 `json:"infoTextOpacity"`
+	InfoTextStrokeWidth      int     `json:"infoTextStrokeWidth"`
+	InfoTextStrokeColor      string  `json:"infoTextStrokeColor"`
 	Speed                    float64 `json:"speed"`
 	EffectInterval           float64 `json:"effectInterval"`
 	EffectDuration           float64 `json:"effectDuration"`
@@ -57,7 +71,11 @@ type OverlayStyle struct {
 	GradientRange            int     `json:"gradientRange,omitempty"` // legacy gradient length, v0.1.9
 	GradientStart            int     `json:"gradientStart"`
 	GradientEnd              int     `json:"gradientEnd"`
-	AvatarSize               int     `json:"avatarSize"`
+	AvatarSize               int     `json:"avatarSize"` // legacy shared avatar size
+	CurrentAvatarSize        int     `json:"currentAvatarSize"`
+	QueueAvatarSize          int     `json:"queueAvatarSize"`
+	CurrentAvatarNameGap     int     `json:"currentAvatarNameGap"`
+	QueueAvatarNameGap       int     `json:"queueAvatarNameGap"`
 	CurrentBackground        string  `json:"currentBackground"`
 	CurrentBackgroundOpacity float64 `json:"currentBackgroundOpacity"`
 	QueueBackground          string  `json:"queueBackground"`
@@ -72,14 +90,17 @@ type OverlayStyle struct {
 	ScrollMode               string  `json:"scrollMode"`
 	ShortAlign               string  `json:"shortAlign"`
 	CurrentWidth             int     `json:"currentWidth"`
+	CurrentSidePadding       int     `json:"currentSidePadding"`
 	QueueWidth               int     `json:"queueWidth"`
 	InfoWidth                int     `json:"infoWidth"`
 	LegacyCountWidth         int     `json:"countWidth,omitempty"`
 	QueueLineGap             int     `json:"queueLineGap"`
 	QueueItemGap             int     `json:"queueItemGap"`
-	QueueSecondPageSize      int     `json:"queueSecondPageSize"`
+	QueueSecondPageSize      int     `json:"queueSecondPageSize,omitempty"` // legacy v0.1.12-test10
+	QueuePageSize            int     `json:"queuePageSize"`
 	InfoLineGap              int     `json:"infoLineGap"`
-	DoubleLineThreshold      int     `json:"doubleLineThreshold"`
+	DoubleLineEnabled        bool    `json:"doubleLineEnabled"`
+	DoubleLineThreshold      int     `json:"doubleLineThreshold,omitempty"` // legacy v0.1.12-test10
 	InfoText                 string  `json:"infoText"`
 	EmptyText                string  `json:"emptyText"`
 	QueueEmptyText           string  `json:"queueEmptyText"`
@@ -99,6 +120,7 @@ type Config struct {
 	JoinCommand   string             `json:"joinCommand"`
 	CancelCommand string             `json:"cancelCommand"`
 	ClearCommand  string             `json:"clearCommand"`
+	NextCommand   string             `json:"nextCommand"`
 	MaxQueue      int                `json:"maxQueue"`
 	GiftPriority  GiftPriorityConfig `json:"giftPriority"`
 	Overlay       OverlayStyle       `json:"overlay"`
@@ -180,13 +202,14 @@ const version = "0.1.12"
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 8,
+		SchemaVersion: 11,
 		ListenAddress: "127.0.0.1:18303",
 		RoomID:        "",
 		QueueEnabled:  true,
 		JoinCommand:   "排队",
 		CancelCommand: "取消排队",
 		ClearCommand:  "清空队列",
+		NextCommand:   "下一位",
 		MaxQueue:      100,
 		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
 		Overlay: OverlayStyle{
@@ -196,16 +219,30 @@ func defaultConfig() Config {
 			CurrentTextColor:         "#ffffff",
 			CurrentFontWeight:        600,
 			CurrentTextAlign:         "left",
+			CurrentBadgeText:         "当前",
+			CurrentBadgeTextColor:    "#ffffff",
+			CurrentBadgeBackground:   "#6577ed",
+			CurrentBadgeOpacity:      0.92,
+			CurrentBadgeFontSize:     11,
+			CurrentBadgeRadius:       8,
+			CurrentBadgeOffsetX:      -6,
+			CurrentBadgeOffsetY:      -6,
 			CurrentTextOpacity:       1,
+			CurrentTextStrokeWidth:   0,
+			CurrentTextStrokeColor:   "#000000",
 			QueueFontSize:            24,
 			QueueTextColor:           "#ffffff",
 			QueueFontWeight:          500,
 			QueueTextOpacity:         1,
+			QueueTextStrokeWidth:     0,
+			QueueTextStrokeColor:     "#000000",
 			InfoFontSize:             18,
 			InfoTextColor:            "#ffffff",
 			InfoFontWeight:           500,
 			InfoTextAlign:            "left",
 			InfoTextOpacity:          1,
+			InfoTextStrokeWidth:      0,
+			InfoTextStrokeColor:      "#000000",
 			Speed:                    40,
 			EffectInterval:           4,
 			EffectDuration:           0.42,
@@ -216,6 +253,10 @@ func defaultConfig() Config {
 			GradientStart:            0,
 			GradientEnd:              100,
 			AvatarSize:               32,
+			CurrentAvatarSize:        32,
+			QueueAvatarSize:          32,
+			CurrentAvatarNameGap:     12,
+			QueueAvatarNameGap:       10,
 			CurrentBackground:        "#ffffff",
 			CurrentBackgroundOpacity: 0.07,
 			QueueBackground:          "#000000",
@@ -230,12 +271,15 @@ func defaultConfig() Config {
 			ScrollMode:               "continuous",
 			ShortAlign:               "center",
 			CurrentWidth:             300,
+			CurrentSidePadding:       20,
 			QueueWidth:               1220,
 			InfoWidth:                400,
 			QueueLineGap:             8,
 			QueueItemGap:             22,
 			QueueSecondPageSize:      5,
+			QueuePageSize:            5,
 			InfoLineGap:              4,
+			DoubleLineEnabled:        true,
 			DoubleLineThreshold:      8,
 			InfoText:                 "弹幕发送“排队”加入\n达到礼物门槛可进入优先队列",
 			EmptyText:                "排队空闲中",
@@ -397,6 +441,36 @@ func (a *App) clearQueue() {
 	a.broadcast()
 }
 
+func (a *App) advanceQueue() {
+	a.mu.Lock()
+	if len(a.queue) > 0 {
+		a.queue = a.queue[1:]
+	}
+	a.mu.Unlock()
+	a.saveQueue()
+	a.broadcast()
+}
+
+func (a *App) autoConnectIfReady(reason string) {
+	a.mu.RLock()
+	auth := a.auth
+	roomID := strings.TrimSpace(a.config.RoomID)
+	status := a.connectionStatus
+	a.mu.RUnlock()
+	if auth.UID <= 0 || strings.TrimSpace(auth.Cookie) == "" || roomID == "" {
+		return
+	}
+	if status == "connected" || status == "connecting" || status == "reconnecting" {
+		return
+	}
+	log.Printf("auto connect room %s after %s", roomID, reason)
+	go func() {
+		if err := a.connect(roomID); err != nil {
+			log.Printf("auto connect failed: %v", err)
+		}
+	}()
+}
+
 func (a *App) loadConfig() {
 	data, err := os.ReadFile(a.configPath())
 	if err != nil {
@@ -418,6 +492,9 @@ func applyConfigDefaults(cfg *Config) {
 	legacyV6 := cfg.SchemaVersion < 6
 	legacyV7 := cfg.SchemaVersion < 7
 	legacyV8 := cfg.SchemaVersion < 8
+	legacyV9 := cfg.SchemaVersion < 9
+	legacyV10 := cfg.SchemaVersion < 10
+	legacyV11 := cfg.SchemaVersion < 11
 	if strings.TrimSpace(cfg.ListenAddress) == "" {
 		cfg.ListenAddress = def.ListenAddress
 	}
@@ -427,6 +504,9 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.ClearCommand) == "" {
 		cfg.ClearCommand = def.ClearCommand
+	}
+	if strings.TrimSpace(cfg.NextCommand) == "" {
+		cfg.NextCommand = def.NextCommand
 	}
 	if strings.TrimSpace(cfg.JoinCommand) == "" {
 		cfg.JoinCommand = def.JoinCommand
@@ -440,8 +520,8 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.GiftPriority.ThresholdBattery <= 0 {
 		cfg.GiftPriority.ThresholdBattery = def.GiftPriority.ThresholdBattery
 	}
-	if cfg.Overlay.Height < 48 {
-		cfg.Overlay.Height = def.Overlay.Height
+	if cfg.Overlay.Height < 50 {
+		cfg.Overlay.Height = 50
 	}
 	if cfg.Overlay.FontSize < 12 {
 		cfg.Overlay.FontSize = def.Overlay.FontSize
@@ -499,6 +579,10 @@ func applyConfigDefaults(cfg *Config) {
 		cfg.Overlay.GradientStart = def.Overlay.GradientStart
 		cfg.Overlay.GradientEnd = def.Overlay.GradientEnd
 		cfg.Overlay.AvatarSize = def.Overlay.AvatarSize
+		cfg.Overlay.CurrentAvatarSize = def.Overlay.CurrentAvatarSize
+		cfg.Overlay.QueueAvatarSize = def.Overlay.QueueAvatarSize
+		cfg.Overlay.CurrentAvatarNameGap = def.Overlay.CurrentAvatarNameGap
+		cfg.Overlay.QueueAvatarNameGap = def.Overlay.QueueAvatarNameGap
 	}
 	cfg.Overlay.CurrentFontFile = normalizeFontFileName(cfg.Overlay.CurrentFontFile)
 	cfg.Overlay.QueueFontFile = normalizeFontFileName(cfg.Overlay.QueueFontFile)
@@ -512,6 +596,24 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.InfoTextOpacity < 0 || cfg.Overlay.InfoTextOpacity > 1 {
 		cfg.Overlay.InfoTextOpacity = def.Overlay.InfoTextOpacity
 	}
+	if cfg.Overlay.CurrentTextStrokeWidth < 0 || cfg.Overlay.CurrentTextStrokeWidth > 12 {
+		cfg.Overlay.CurrentTextStrokeWidth = def.Overlay.CurrentTextStrokeWidth
+	}
+	if cfg.Overlay.QueueTextStrokeWidth < 0 || cfg.Overlay.QueueTextStrokeWidth > 12 {
+		cfg.Overlay.QueueTextStrokeWidth = def.Overlay.QueueTextStrokeWidth
+	}
+	if cfg.Overlay.InfoTextStrokeWidth < 0 || cfg.Overlay.InfoTextStrokeWidth > 12 {
+		cfg.Overlay.InfoTextStrokeWidth = def.Overlay.InfoTextStrokeWidth
+	}
+	if cfg.Overlay.CurrentTextStrokeColor == "" {
+		cfg.Overlay.CurrentTextStrokeColor = def.Overlay.CurrentTextStrokeColor
+	}
+	if cfg.Overlay.QueueTextStrokeColor == "" {
+		cfg.Overlay.QueueTextStrokeColor = def.Overlay.QueueTextStrokeColor
+	}
+	if cfg.Overlay.InfoTextStrokeColor == "" {
+		cfg.Overlay.InfoTextStrokeColor = def.Overlay.InfoTextStrokeColor
+	}
 	if cfg.Overlay.CurrentFontWeight < 100 || cfg.Overlay.CurrentFontWeight > 900 {
 		cfg.Overlay.CurrentFontWeight = def.Overlay.CurrentFontWeight
 	}
@@ -523,6 +625,42 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if cfg.Overlay.CurrentTextAlign != "left" && cfg.Overlay.CurrentTextAlign != "center" && cfg.Overlay.CurrentTextAlign != "right" {
 		cfg.Overlay.CurrentTextAlign = def.Overlay.CurrentTextAlign
+	}
+	if legacyV10 {
+		cfg.Overlay.CurrentBadgeText = def.Overlay.CurrentBadgeText
+		cfg.Overlay.CurrentBadgeTextColor = def.Overlay.CurrentBadgeTextColor
+		cfg.Overlay.CurrentBadgeBackground = def.Overlay.CurrentBadgeBackground
+		cfg.Overlay.CurrentBadgeOpacity = def.Overlay.CurrentBadgeOpacity
+		cfg.Overlay.CurrentBadgeFontSize = def.Overlay.CurrentBadgeFontSize
+		cfg.Overlay.CurrentBadgeRadius = def.Overlay.CurrentBadgeRadius
+	}
+	if legacyV11 {
+		cfg.Overlay.CurrentBadgeOffsetX = def.Overlay.CurrentBadgeOffsetX
+		cfg.Overlay.CurrentBadgeOffsetY = def.Overlay.CurrentBadgeOffsetY
+	}
+	if strings.TrimSpace(cfg.Overlay.CurrentBadgeText) == "" {
+		cfg.Overlay.CurrentBadgeText = def.Overlay.CurrentBadgeText
+	}
+	if cfg.Overlay.CurrentBadgeTextColor == "" {
+		cfg.Overlay.CurrentBadgeTextColor = def.Overlay.CurrentBadgeTextColor
+	}
+	if cfg.Overlay.CurrentBadgeBackground == "" {
+		cfg.Overlay.CurrentBadgeBackground = def.Overlay.CurrentBadgeBackground
+	}
+	if cfg.Overlay.CurrentBadgeOpacity < 0 || cfg.Overlay.CurrentBadgeOpacity > 1 {
+		cfg.Overlay.CurrentBadgeOpacity = def.Overlay.CurrentBadgeOpacity
+	}
+	if cfg.Overlay.CurrentBadgeFontSize < 8 || cfg.Overlay.CurrentBadgeFontSize > 28 {
+		cfg.Overlay.CurrentBadgeFontSize = def.Overlay.CurrentBadgeFontSize
+	}
+	if cfg.Overlay.CurrentBadgeRadius < 0 || cfg.Overlay.CurrentBadgeRadius > 28 {
+		cfg.Overlay.CurrentBadgeRadius = def.Overlay.CurrentBadgeRadius
+	}
+	if cfg.Overlay.CurrentBadgeOffsetX < -80 || cfg.Overlay.CurrentBadgeOffsetX > 80 {
+		cfg.Overlay.CurrentBadgeOffsetX = def.Overlay.CurrentBadgeOffsetX
+	}
+	if cfg.Overlay.CurrentBadgeOffsetY < -80 || cfg.Overlay.CurrentBadgeOffsetY > 80 {
+		cfg.Overlay.CurrentBadgeOffsetY = def.Overlay.CurrentBadgeOffsetY
 	}
 	if cfg.Overlay.InfoTextAlign != "left" && cfg.Overlay.InfoTextAlign != "center" && cfg.Overlay.InfoTextAlign != "right" {
 		cfg.Overlay.InfoTextAlign = def.Overlay.InfoTextAlign
@@ -567,6 +705,30 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if legacyV6 || cfg.Overlay.AvatarSize < 12 || cfg.Overlay.AvatarSize > 96 {
 		cfg.Overlay.AvatarSize = def.Overlay.AvatarSize
+		cfg.Overlay.CurrentAvatarSize = def.Overlay.CurrentAvatarSize
+		cfg.Overlay.QueueAvatarSize = def.Overlay.QueueAvatarSize
+		cfg.Overlay.CurrentAvatarNameGap = def.Overlay.CurrentAvatarNameGap
+		cfg.Overlay.QueueAvatarNameGap = def.Overlay.QueueAvatarNameGap
+	}
+	if cfg.Overlay.CurrentAvatarSize < 12 || cfg.Overlay.CurrentAvatarSize > 96 {
+		if cfg.Overlay.AvatarSize >= 12 && cfg.Overlay.AvatarSize <= 96 {
+			cfg.Overlay.CurrentAvatarSize = cfg.Overlay.AvatarSize
+		} else {
+			cfg.Overlay.CurrentAvatarSize = def.Overlay.CurrentAvatarSize
+		}
+	}
+	if cfg.Overlay.QueueAvatarSize < 12 || cfg.Overlay.QueueAvatarSize > 96 {
+		if cfg.Overlay.AvatarSize >= 12 && cfg.Overlay.AvatarSize <= 96 {
+			cfg.Overlay.QueueAvatarSize = cfg.Overlay.AvatarSize
+		} else {
+			cfg.Overlay.QueueAvatarSize = def.Overlay.QueueAvatarSize
+		}
+	}
+	if cfg.Overlay.CurrentAvatarNameGap < 0 || cfg.Overlay.CurrentAvatarNameGap > 80 {
+		cfg.Overlay.CurrentAvatarNameGap = def.Overlay.CurrentAvatarNameGap
+	}
+	if cfg.Overlay.QueueAvatarNameGap < 0 || cfg.Overlay.QueueAvatarNameGap > 80 {
+		cfg.Overlay.QueueAvatarNameGap = def.Overlay.QueueAvatarNameGap
 	}
 	if cfg.Overlay.CurrentBackground == "" {
 		cfg.Overlay.CurrentBackground = def.Overlay.CurrentBackground
@@ -597,6 +759,9 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if cfg.Overlay.CurrentWidth <= 0 {
 		cfg.Overlay.CurrentWidth = def.Overlay.CurrentWidth
+	}
+	if cfg.Overlay.CurrentSidePadding < 0 || cfg.Overlay.CurrentSidePadding > 120 {
+		cfg.Overlay.CurrentSidePadding = def.Overlay.CurrentSidePadding
 	}
 	if cfg.Overlay.InfoWidth <= 0 {
 		if cfg.Overlay.LegacyCountWidth > 0 {
@@ -634,8 +799,17 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.QueueItemGap < 0 || cfg.Overlay.QueueItemGap > 120 {
 		cfg.Overlay.QueueItemGap = def.Overlay.QueueItemGap
 	}
+	if legacyV9 {
+		cfg.Overlay.DoubleLineEnabled = cfg.Overlay.DoubleLineThreshold < 50
+		if cfg.Overlay.QueuePageSize <= 0 {
+			cfg.Overlay.QueuePageSize = cfg.Overlay.QueueSecondPageSize
+		}
+	}
+	if cfg.Overlay.QueuePageSize <= 0 || cfg.Overlay.QueuePageSize > 20 {
+		cfg.Overlay.QueuePageSize = def.Overlay.QueuePageSize
+	}
 	if cfg.Overlay.QueueSecondPageSize <= 0 || cfg.Overlay.QueueSecondPageSize > 20 {
-		cfg.Overlay.QueueSecondPageSize = def.Overlay.QueueSecondPageSize
+		cfg.Overlay.QueueSecondPageSize = cfg.Overlay.QueuePageSize
 	}
 	if cfg.Overlay.InfoLineGap < 0 {
 		cfg.Overlay.InfoLineGap = 0
@@ -725,6 +899,7 @@ func (a *App) setAuth(auth BiliAuth) error {
 		return err
 	}
 	a.broadcast()
+	a.autoConnectIfReady("login")
 	return nil
 }
 
@@ -925,18 +1100,10 @@ func (a *App) prioritizeGiftSender(gift GiftMessage) {
 			user.PriorityAt = now
 		}
 	} else {
-		a.queue = append(a.queue, QueueUser{
-			ID:          fmt.Sprintf("%d-%d", time.Now().UnixNano(), a.messageSeq.Add(1)),
-			UID:         gift.UID,
-			Username:    gift.Username,
-			Avatar:      gift.Avatar,
-			JoinedAt:    now,
-			Priority:    true,
-			GiftName:    gift.GiftName,
-			GiftIcon:    gift.GiftIcon,
-			GiftBattery: gift.Battery,
-			PriorityAt:  now,
-		})
+		// Gift priority only upgrades users who are already in the queue.
+		// A paid gift from a non-queued viewer is recorded in lastGift but does not join the queue.
+		a.mu.Unlock()
+		return
 	}
 	a.normalizePriorityZoneLocked()
 	a.mu.Unlock()
@@ -955,14 +1122,31 @@ func (a *App) processMessage(msg ChatMessage) {
 	joinCmd := strings.TrimSpace(a.config.JoinCommand)
 	cancelCmd := strings.TrimSpace(a.config.CancelCommand)
 	clearCmd := strings.TrimSpace(a.config.ClearCommand)
+	nextCmd := strings.TrimSpace(a.config.NextCommand)
 	queueEnabled := a.config.QueueEnabled
 	anchorUID := a.anchorUID
 	a.mu.Unlock()
 	a.broadcast()
 
-	if clearCmd != "" && cmd == clearCmd && anchorUID > 0 && msg.UID == anchorUID {
-		a.clearQueue()
-		return
+	if clearCmd != "" && cmd == clearCmd {
+		if anchorUID <= 0 {
+			log.Printf("clear queue command ignored: anchor uid is unknown, sender uid=%d", msg.UID)
+		} else if msg.UID != anchorUID {
+			log.Printf("clear queue command ignored: sender uid=%d does not match anchor uid=%d", msg.UID, anchorUID)
+		} else {
+			a.clearQueue()
+			return
+		}
+	}
+	if nextCmd != "" && cmd == nextCmd {
+		if anchorUID <= 0 {
+			log.Printf("next queue command ignored: anchor uid is unknown, sender uid=%d", msg.UID)
+		} else if msg.UID != anchorUID {
+			log.Printf("next queue command ignored: sender uid=%d does not match anchor uid=%d", msg.UID, anchorUID)
+		} else {
+			a.advanceQueue()
+			return
+		}
 	}
 	if !queueEnabled {
 		return
@@ -1241,13 +1425,7 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		a.mu.Lock()
-		if len(a.queue) > 0 {
-			a.queue = a.queue[1:]
-		}
-		a.mu.Unlock()
-		a.saveQueue()
-		a.broadcast()
+		a.advanceQueue()
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -1736,6 +1914,7 @@ func main() {
 	log.Printf("BiliQueue %s", version)
 	log.Printf("control: %s", controlURL)
 	log.Printf("browser source: %s", overlayURL)
+	app.autoConnectIfReady("startup")
 
 	if *openBrowserOnStart && !*noBrowser {
 		go func() {
