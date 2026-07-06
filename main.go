@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,6 +48,8 @@ type OverlayStyle struct {
 	InfoFontFile             string  `json:"infoFontFile,omitempty"`
 	InfoTextOpacity          float64 `json:"infoTextOpacity"`
 	Speed                    float64 `json:"speed"`
+	EffectInterval           float64 `json:"effectInterval"`
+	EffectDuration           float64 `json:"effectDuration"`
 	Background               string  `json:"background"`
 	Opacity                  float64 `json:"opacity,omitempty"` // legacy global opacity
 	GradientTopOpacity       float64 `json:"gradientTopOpacity"`
@@ -73,6 +76,8 @@ type OverlayStyle struct {
 	InfoWidth                int     `json:"infoWidth"`
 	LegacyCountWidth         int     `json:"countWidth,omitempty"`
 	QueueLineGap             int     `json:"queueLineGap"`
+	QueueItemGap             int     `json:"queueItemGap"`
+	QueueSecondPageSize      int     `json:"queueSecondPageSize"`
 	InfoLineGap              int     `json:"infoLineGap"`
 	DoubleLineThreshold      int     `json:"doubleLineThreshold"`
 	InfoText                 string  `json:"infoText"`
@@ -88,9 +93,12 @@ type GiftPriorityConfig struct {
 
 type Config struct {
 	SchemaVersion int                `json:"schemaVersion"`
+	ListenAddress string             `json:"listenAddress"`
 	RoomID        string             `json:"roomId"`
+	QueueEnabled  bool               `json:"queueEnabled"`
 	JoinCommand   string             `json:"joinCommand"`
 	CancelCommand string             `json:"cancelCommand"`
+	ClearCommand  string             `json:"clearCommand"`
 	MaxQueue      int                `json:"maxQueue"`
 	GiftPriority  GiftPriorityConfig `json:"giftPriority"`
 	Overlay       OverlayStyle       `json:"overlay"`
@@ -124,6 +132,10 @@ type PublicState struct {
 	ResolvedRoomID   int64        `json:"resolvedRoomId,omitempty"`
 	RoomTitle        string       `json:"roomTitle,omitempty"`
 	AnchorName       string       `json:"anchorName,omitempty"`
+	AnchorUID        int64        `json:"anchorUid,omitempty"`
+	ControlURL       string       `json:"controlUrl,omitempty"`
+	OverlayURL       string       `json:"overlayUrl,omitempty"`
+	MiniControlURL   string       `json:"miniControlUrl,omitempty"`
 	LastMessage      *ChatMessage `json:"lastMessage,omitempty"`
 	LastGift         *GiftMessage `json:"lastGift,omitempty"`
 	Version          string       `json:"version"`
@@ -149,6 +161,8 @@ type App struct {
 	resolvedRoomID   int64
 	roomTitle        string
 	anchorName       string
+	anchorUID        int64
+	serverControl    *ServerController
 	lastMessage      *ChatMessage
 	lastGift         *GiftMessage
 	giftEvents       map[string]int64
@@ -162,14 +176,17 @@ type App struct {
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.11"
+const version = "0.1.12"
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 7,
+		SchemaVersion: 8,
+		ListenAddress: "127.0.0.1:18303",
 		RoomID:        "",
+		QueueEnabled:  true,
 		JoinCommand:   "排队",
 		CancelCommand: "取消排队",
+		ClearCommand:  "清空队列",
 		MaxQueue:      100,
 		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
 		Overlay: OverlayStyle{
@@ -190,6 +207,8 @@ func defaultConfig() Config {
 			InfoTextAlign:            "left",
 			InfoTextOpacity:          1,
 			Speed:                    40,
+			EffectInterval:           4,
+			EffectDuration:           0.42,
 			Background:               "#000000",
 			GradientTopOpacity:       0.45,
 			GradientBottomOpacity:    0.45,
@@ -214,6 +233,8 @@ func defaultConfig() Config {
 			QueueWidth:               1220,
 			InfoWidth:                400,
 			QueueLineGap:             8,
+			QueueItemGap:             22,
+			QueueSecondPageSize:      5,
 			InfoLineGap:              4,
 			DoubleLineThreshold:      8,
 			InfoText:                 "弹幕发送“排队”加入\n达到礼物门槛可进入优先队列",
@@ -273,11 +294,36 @@ func (a *App) stateLocked() PublicState {
 		ResolvedRoomID:   a.resolvedRoomID,
 		RoomTitle:        a.roomTitle,
 		AnchorName:       a.anchorName,
+		AnchorUID:        a.anchorUID,
+		ControlURL:       a.controlURL(),
+		OverlayURL:       a.overlayURL(),
+		MiniControlURL:   a.miniControlURL(),
 		LastMessage:      msg,
 		LastGift:         gift,
 		Version:          version,
 	}
 }
+
+func (a *App) currentListenAddress() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.config.ListenAddress
+}
+
+func urlForListen(addr, path string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		addr = defaultConfig().ListenAddress
+	}
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	return "http://" + addr + path
+}
+
+func (a *App) controlURL() string     { return urlForListen(a.config.ListenAddress, "/control") }
+func (a *App) overlayURL() string     { return urlForListen(a.config.ListenAddress, "/overlay") }
+func (a *App) miniControlURL() string { return urlForListen(a.config.ListenAddress, "/mini-control") }
 
 func (a *App) state() PublicState {
 	a.mu.RLock()
@@ -371,6 +417,17 @@ func applyConfigDefaults(cfg *Config) {
 	legacyV5 := cfg.SchemaVersion < 5
 	legacyV6 := cfg.SchemaVersion < 6
 	legacyV7 := cfg.SchemaVersion < 7
+	legacyV8 := cfg.SchemaVersion < 8
+	if strings.TrimSpace(cfg.ListenAddress) == "" {
+		cfg.ListenAddress = def.ListenAddress
+	}
+	cfg.ListenAddress = normalizeListenAddress(cfg.ListenAddress, def.ListenAddress)
+	if legacyV8 {
+		cfg.QueueEnabled = true
+	}
+	if strings.TrimSpace(cfg.ClearCommand) == "" {
+		cfg.ClearCommand = def.ClearCommand
+	}
 	if strings.TrimSpace(cfg.JoinCommand) == "" {
 		cfg.JoinCommand = def.JoinCommand
 	}
@@ -473,6 +530,15 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.Speed < 0 {
 		cfg.Overlay.Speed = def.Overlay.Speed
 	}
+	if cfg.Overlay.EffectInterval <= 0 {
+		cfg.Overlay.EffectInterval = def.Overlay.EffectInterval
+	}
+	if cfg.Overlay.EffectDuration <= 0 {
+		cfg.Overlay.EffectDuration = def.Overlay.EffectDuration
+	}
+	if cfg.Overlay.EffectDuration > cfg.Overlay.EffectInterval {
+		cfg.Overlay.EffectDuration = cfg.Overlay.EffectInterval
+	}
 	if cfg.Overlay.Background == "" {
 		cfg.Overlay.Background = def.Overlay.Background
 	}
@@ -523,6 +589,9 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.ScrollMode == "" {
 		cfg.Overlay.ScrollMode = def.Overlay.ScrollMode
 	}
+	if cfg.Overlay.ScrollMode != "continuous" && cfg.Overlay.ScrollMode != "paged" && cfg.Overlay.ScrollMode != "fade" {
+		cfg.Overlay.ScrollMode = def.Overlay.ScrollMode
+	}
 	if cfg.Overlay.ShortAlign == "" {
 		cfg.Overlay.ShortAlign = def.Overlay.ShortAlign
 	}
@@ -562,6 +631,12 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.QueueLineGap < 0 {
 		cfg.Overlay.QueueLineGap = 0
 	}
+	if cfg.Overlay.QueueItemGap < 0 || cfg.Overlay.QueueItemGap > 120 {
+		cfg.Overlay.QueueItemGap = def.Overlay.QueueItemGap
+	}
+	if cfg.Overlay.QueueSecondPageSize <= 0 || cfg.Overlay.QueueSecondPageSize > 20 {
+		cfg.Overlay.QueueSecondPageSize = def.Overlay.QueueSecondPageSize
+	}
 	if cfg.Overlay.InfoLineGap < 0 {
 		cfg.Overlay.InfoLineGap = 0
 	}
@@ -578,6 +653,34 @@ func applyConfigDefaults(cfg *Config) {
 	cfg.Overlay.Opacity = 0
 	cfg.Overlay.GradientRange = 0
 	cfg.SchemaVersion = def.SchemaVersion
+}
+
+func normalizeListenAddress(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = fallback
+	}
+	value = strings.TrimPrefix(value, "http://")
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimRight(value, "/")
+	if strings.HasPrefix(value, ":") {
+		value = "127.0.0.1" + value
+	}
+	host, port, err := net.SplitHostPort(value)
+	if err != nil {
+		if p, err2 := strconv.Atoi(value); err2 == nil && p > 0 && p <= 65535 {
+			return fmt.Sprintf("127.0.0.1:%d", p)
+		}
+		return fallback
+	}
+	if host == "" || host == "localhost" {
+		host = "127.0.0.1"
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 || p > 65535 {
+		return fallback
+	}
+	return net.JoinHostPort(host, strconv.Itoa(p))
 }
 
 func (a *App) loadAuth() {
@@ -745,7 +848,7 @@ func (a *App) processGift(gift GiftMessage) {
 	a.mu.Unlock()
 	a.broadcast()
 
-	if !cfg.Enabled || gift.CoinType != "gold" || gift.Battery < cfg.ThresholdBattery {
+	if !a.state().Config.QueueEnabled || !cfg.Enabled || gift.CoinType != "gold" || gift.Battery < cfg.ThresholdBattery {
 		return
 	}
 	a.prioritizeGiftSender(gift)
@@ -851,9 +954,19 @@ func (a *App) processMessage(msg ChatMessage) {
 	a.lastMessage = &cp
 	joinCmd := strings.TrimSpace(a.config.JoinCommand)
 	cancelCmd := strings.TrimSpace(a.config.CancelCommand)
+	clearCmd := strings.TrimSpace(a.config.ClearCommand)
+	queueEnabled := a.config.QueueEnabled
+	anchorUID := a.anchorUID
 	a.mu.Unlock()
 	a.broadcast()
 
+	if clearCmd != "" && cmd == clearCmd && anchorUID > 0 && msg.UID == anchorUID {
+		a.clearQueue()
+		return
+	}
+	if !queueEnabled {
+		return
+	}
 	switch cmd {
 	case joinCmd:
 		a.addUser(msg)
@@ -893,6 +1006,7 @@ func (a *App) connect(roomID string) error {
 	a.resolvedRoomID = 0
 	a.roomTitle = ""
 	a.anchorName = ""
+	a.anchorUID = 0
 	a.mu.Unlock()
 	a.saveConfig()
 	a.broadcast()
@@ -914,6 +1028,9 @@ func (a *App) connect(roomID string) error {
 		}
 		if status.AnchorName != "" {
 			a.anchorName = status.AnchorName
+		}
+		if status.AnchorUID > 0 {
+			a.anchorUID = status.AnchorUID
 		}
 		a.mu.Unlock()
 		a.broadcast()
@@ -965,6 +1082,7 @@ func (a *App) routes() http.Handler {
 	})
 	mux.HandleFunc("/control", serveEmbedded("web/control.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/overlay", serveEmbedded("web/overlay.html", "text/html; charset=utf-8"))
+	mux.HandleFunc("/mini-control", serveEmbedded("web/mini-control.html", "text/html; charset=utf-8"))
 
 	mux.HandleFunc("/api/fonts", a.handleFonts)
 	mux.HandleFunc("/fonts/", a.handleFontFile)
@@ -981,6 +1099,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/media/image", a.handleMediaImage)
 	mux.HandleFunc("/api/config/export", a.handleConfigExport)
 	mux.HandleFunc("/api/config/import", a.handleConfigImport)
+	mux.HandleFunc("/api/server/listen", a.handleServerListen)
 
 	mux.HandleFunc("/api/auth/qrcode/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1412,12 +1531,156 @@ func setupLogging(dataDir string) *os.File {
 	return file
 }
 
+type ServerController struct {
+	mu       sync.Mutex
+	app      *App
+	server   *http.Server
+	listener net.Listener
+	addr     string
+}
+
+func NewServerController(app *App) *ServerController {
+	return &ServerController{app: app}
+}
+
+func (sc *ServerController) Start(addr string) error {
+	addr = normalizeListenAddress(addr, defaultConfig().ListenAddress)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	srv := &http.Server{Addr: addr, Handler: sc.app.routes(), ReadHeaderTimeout: 10 * time.Second}
+	sc.mu.Lock()
+	sc.server = srv
+	sc.listener = ln
+	sc.addr = addr
+	sc.mu.Unlock()
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server: %v", err)
+			showErrorDialog("BiliQueue 服务异常", err.Error())
+		}
+	}()
+	return nil
+}
+
+func (sc *ServerController) ChangeListenAddress(addr string) (PublicState, error) {
+	addr = normalizeListenAddress(addr, defaultConfig().ListenAddress)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return PublicState{}, err
+	}
+	newServer := &http.Server{Addr: addr, Handler: sc.app.routes(), ReadHeaderTimeout: 10 * time.Second}
+	sc.mu.Lock()
+	oldServer := sc.server
+	sc.server = newServer
+	sc.listener = ln
+	sc.addr = addr
+	sc.mu.Unlock()
+
+	sc.app.mu.Lock()
+	sc.app.config.ListenAddress = addr
+	sc.app.mu.Unlock()
+	sc.app.saveConfig()
+	go func() {
+		if err := newServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server changed listener failed: %v", err)
+		}
+	}()
+	if oldServer != nil {
+		go func() {
+			time.Sleep(650 * time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = oldServer.Shutdown(ctx)
+		}()
+	}
+	sc.app.broadcast()
+	return sc.app.state(), nil
+}
+
+func (sc *ServerController) Shutdown(ctx context.Context) error {
+	sc.mu.Lock()
+	srv := sc.server
+	sc.mu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
+}
+
+func (sc *ServerController) Close() error {
+	sc.mu.Lock()
+	srv := sc.server
+	sc.server = nil
+	sc.listener = nil
+	sc.addr = ""
+	sc.mu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Close()
+}
+
+func (a *App) prepareExit() {
+	a.mu.Lock()
+	if a.connectionCancel != nil {
+		a.connectionCancel()
+		a.connectionCancel = nil
+	}
+	a.connectionGeneration++
+	a.connectionStatus = "disconnected"
+	a.connectionDetail = "已退出"
+	a.mu.Unlock()
+	a.saveConfig()
+	a.saveQueue()
+}
+
+func (a *App) handleServerListen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ListenAddress string `json:"listenAddress"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if a.serverControl == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "服务控制器未初始化"})
+		return
+	}
+	state, err := a.serverControl.ChangeListenAddress(req.ListenAddress)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "端口切换失败：" + err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+func chooseStartupListenAddress(app *App, flagValue string) string {
+	if strings.TrimSpace(flagValue) != "" {
+		return normalizeListenAddress(flagValue, defaultConfig().ListenAddress)
+	}
+	return normalizeListenAddress(app.config.ListenAddress, defaultConfig().ListenAddress)
+}
+
+func listenPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "18303"
+	}
+	return port
+}
+
 func main() {
 	defaultDataDir := "data"
 	if executable, err := os.Executable(); err == nil {
 		defaultDataDir = filepath.Join(filepath.Dir(executable), "data")
 	}
-	listen := flag.String("listen", "127.0.0.1:18303", "HTTP listen address")
+	listenFlag := flag.String("listen", "", "HTTP listen address")
 	dataDir := flag.String("data", defaultDataDir, "data directory")
 	openBrowserOnStart := flag.Bool("open-browser", false, "open the control page on startup")
 	noBrowser := flag.Bool("no-browser", false, "do not open the control page; kept for compatibility")
@@ -1430,17 +1693,49 @@ func main() {
 	}
 
 	app := newApp(*dataDir)
-	server := &http.Server{
-		Addr:              *listen,
-		Handler:           app.routes(),
-		ReadHeaderTimeout: 10 * time.Second,
+	listen := chooseStartupListenAddress(app, *listenFlag)
+	if release, already := acquireSingleInstance(); already {
+		log.Printf("another instance is already running")
+		showInfoDialog("啊哦！", "已有 BiliQueue 正在运行！")
+		if release != nil {
+			release()
+		}
+		return
+	} else if release != nil {
+		defer release()
 	}
 
-	controlURL := "http://" + *listen + "/control"
-	overlayURL := "http://" + *listen + "/overlay"
+	controller := NewServerController(app)
+	app.serverControl = controller
+
+	for {
+		if err := controller.Start(listen); err != nil {
+			log.Printf("server start failed on %s: %v", listen, err)
+			if runtime.GOOS == "windows" {
+				input, ok := promptListenAddress("啊哦！", "BiliQueue 所需的端口被占用了！请输入一个新的端口！", "127.0.0.1:"+listenPort(listen))
+				if ok {
+					listen = normalizeListenAddress(input, defaultConfig().ListenAddress)
+					continue
+				}
+				log.Printf("startup canceled after listen failure")
+				return
+			}
+			showErrorDialog("BiliQueue 启动失败", err.Error())
+			os.Exit(1)
+		}
+		break
+	}
+
+	app.mu.Lock()
+	app.config.ListenAddress = listen
+	app.mu.Unlock()
+	app.saveConfig()
+
+	controlURL := urlForListen(listen, "/control")
+	overlayURL := urlForListen(listen, "/overlay")
 	log.Printf("BiliQueue %s", version)
 	log.Printf("control: %s", controlURL)
-	log.Printf("overlay: %s", overlayURL)
+	log.Printf("browser source: %s", overlayURL)
 
 	if *openBrowserOnStart && !*noBrowser {
 		go func() {
@@ -1451,38 +1746,14 @@ func main() {
 		}()
 	}
 
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-			return
-		}
-		serverErr <- nil
-	}()
-
 	if runtime.GOOS == "windows" && !*noTray {
-		select {
-		case err := <-serverErr:
-			if err != nil {
-				log.Printf("server start failed: %v", err)
-				showErrorDialog("BiliQueue 启动失败", err.Error())
-				os.Exit(1)
-			}
-		case <-time.After(250 * time.Millisecond):
-		}
-		if err := runTray(app, controlURL, overlayURL, *dataDir, server); err != nil {
+		if err := runTray(app, controller, *dataDir); err != nil {
 			log.Printf("tray: %v", err)
 			showErrorDialog("BiliQueue 托盘启动失败", err.Error())
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
+		_ = controller.Close()
 		return
 	}
 
-	if err := <-serverErr; err != nil {
-		log.Printf("server: %v", err)
-		showErrorDialog("BiliQueue 启动失败", err.Error())
-		os.Exit(1)
-	}
+	select {}
 }

@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           VERSION="$(cat VERSION)"
-          PACKAGE="BiliQueue-v${VERSION}-windows-test"
+          PACKAGE="BiliQueue-v${VERSION}-windows"
           SOURCE_PACKAGE="BiliQueue-v${VERSION}-source.zip"
           mkdir -p "dist/${PACKAGE}/data" "dist/${PACKAGE}/fonts" "dist/${PACKAGE}/assets"
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-H=windowsgui -s -w" -o "dist/${PACKAGE}/BiliQueue-windows-amd64.exe" .
@@ -48,7 +48,7 @@ jobs:
         run: |
           VERSION="$(cat VERSION)"
           TAG="v${VERSION}"
-          WINDOWS_ASSET="BiliQueue-v${VERSION}-windows-test.zip"
+          WINDOWS_ASSET="BiliQueue-v${VERSION}-windows.zip"
           SOURCE_ASSET="BiliQueue-v${VERSION}-source.zip"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" --clobber

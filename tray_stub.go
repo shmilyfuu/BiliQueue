@@ -2,10 +2,7 @@
 
 package main
 
-import "net/http"
-
-func runTray(app *App, controlURL, overlayURL, dataDir string, server *http.Server) error {
-	return nil
-}
+func runTray(app *App, controller *ServerController, dataDir string) error { return nil }
 
 func showErrorDialog(title, message string) {}
+func showInfoDialog(title, message string)  {}

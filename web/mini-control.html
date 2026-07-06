@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BiliQueue 简易控制页</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="app-shell mini-shell">
+    <header class="topbar">
+      <div class="brand"><h1>BiliQueue</h1><p>简易控制页 · 浏览器源交互使用</p></div>
+      <div id="miniStatus" class="status-pill disconnected"><span class="status-dot"></span><span id="miniStatusText">未连接</span></div>
+    </header>
+    <div class="grid mini-grid">
+      <section>
+        <article class="card">
+          <div class="card-header"><h2>队列管理</h2><span id="miniQueueCount">0 人</span></div>
+          <div class="card-body">
+            <div class="toolbar">
+              <button id="miniNextBtn" class="btn primary">下一位</button>
+              <button id="miniSkipBtn" class="btn">移到队尾</button>
+              <button id="miniPauseBtn" class="btn">暂停排队</button>
+              <button id="miniClearBtn" class="btn danger">清空队列</button>
+            </div>
+            <div class="row" style="margin-bottom:14px">
+              <input id="miniManualName" class="room-input" placeholder="手动添加用户名">
+              <button id="miniManualBtn" class="btn">添加</button>
+            </div>
+            <div id="miniQueueList" class="queue-list"></div>
+          </div>
+        </article>
+      </section>
+      <section>
+        <article class="card text-editor-card">
+          <div class="card-header"><h2>横条文字内容</h2><span id="miniDraftStatus" class="draft-status synced">已同步</span></div>
+          <div class="card-body">
+            <div class="field"><label>当前区域无用户时显示文字</label><textarea id="miniEmptyText" rows="2"></textarea></div>
+            <div class="field"><label>队列区域为空时显示文字</label><textarea id="miniQueueEmptyText" rows="2"></textarea></div>
+            <div class="field"><label>右侧说明内容</label><textarea id="miniInfoText" rows="2"></textarea></div>
+            <div class="text-editor-actions">
+              <span class="setting-note">确认文字后再应用。</span>
+              <div class="row text-buttons">
+                <button id="miniApplyTextBtn" class="btn primary">应用文字到横条</button>
+                <button id="miniDiscardTextBtn" class="btn ghost">放弃修改</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script src="/assets/mini-control.js"></script>
+</body>
+</html>

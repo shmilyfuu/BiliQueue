@@ -3,10 +3,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,6 +45,7 @@ const (
 	mbOK              = 0x00000000
 	mbIconError       = 0x00000010
 	mbIconQuestion    = 0x00000020
+	mbIconInfo        = 0x00000040
 	mbYesNo           = 0x00000004
 	mbSetForeground   = 0x00010000
 	idYes             = 6
@@ -57,13 +56,16 @@ const (
 )
 
 const (
-	menuOpenControl = 1001
-	menuOpenOverlay = 1002
-	menuCopyOverlay = 1003
-	menuClearQueue  = 1004
-	menuOpenDataDir = 1005
-	menuOpenLog     = 1006
-	menuExit        = 1007
+	menuOpenControl     = 1001
+	menuOpenOverlay     = 1002
+	menuOpenMiniControl = 1003
+	menuCopyOverlay     = 1004
+	menuCopyControl     = 1005
+	menuChangePort      = 1006
+	menuClearQueue      = 1007
+	menuOpenDataDir     = 1008
+	menuOpenLog         = 1009
+	menuExit            = 1010
 )
 
 var (
@@ -144,10 +146,8 @@ type notifyIconData struct {
 
 type trayApp struct {
 	app        *App
-	controlURL string
-	overlayURL string
+	controller *ServerController
 	dataDir    string
-	server     *http.Server
 	hwnd       uintptr
 	hIcon      uintptr
 	customIcon bool
@@ -155,7 +155,7 @@ type trayApp struct {
 
 var activeTray *trayApp
 
-func runTray(app *App, controlURL, overlayURL, dataDir string, server *http.Server) error {
+func runTray(app *App, controller *ServerController, dataDir string) error {
 	className, _ := syscall.UTF16PtrFromString("BiliQueueTrayWindow")
 	windowName, _ := syscall.UTF16PtrFromString("BiliQueue")
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
@@ -185,7 +185,7 @@ func runTray(app *App, controlURL, overlayURL, dataDir string, server *http.Serv
 		return fmt.Errorf("CreateWindowExW: %w", err)
 	}
 
-	t := &trayApp{app: app, controlURL: controlURL, overlayURL: overlayURL, dataDir: dataDir, server: server, hwnd: hwnd, hIcon: hIcon, customIcon: customIcon}
+	t := &trayApp{app: app, controller: controller, dataDir: dataDir, hwnd: hwnd, hIcon: hIcon, customIcon: customIcon}
 	activeTray = t
 	if err := t.addIcon(); err != nil {
 		_, _, _ = procDestroyWindow.Call(hwnd)
@@ -228,8 +228,9 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmClose:
+		closeActivePrompt()
 		if t != nil {
-			go t.shutdownServer()
+			t.shutdownServer()
 		}
 		procDestroyWindow.Call(hwnd)
 		return 0
@@ -292,8 +293,11 @@ func (t *trayApp) showMenu() {
 	}
 	defer procDestroyMenu.Call(menu)
 	appendMenu(menu, mfString, menuOpenControl, "打开控制台")
-	appendMenu(menu, mfString, menuOpenOverlay, "打开 OBS 横条")
-	appendMenu(menu, mfString, menuCopyOverlay, "复制 OBS 地址")
+	appendMenu(menu, mfString, menuOpenOverlay, "打开横条")
+	appendMenu(menu, mfString, menuOpenMiniControl, "打开简易控制页")
+	appendMenu(menu, mfString, menuCopyOverlay, "复制浏览器源地址")
+	appendMenu(menu, mfString, menuCopyControl, "复制控制台地址")
+	appendMenu(menu, mfString, menuChangePort, "修改端口")
 	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, mfString, menuClearQueue, "清空队列")
 	appendMenu(menu, mfString, menuOpenDataDir, "打开数据文件夹")
@@ -326,14 +330,25 @@ func (t *trayApp) handleMenu(id uint16) {
 	case menuOpenControl:
 		t.openControl()
 	case menuOpenOverlay:
-		if err := openBrowser(freshOpenURL(t.overlayURL)); err != nil {
+		if err := openBrowser(freshOpenURL(t.overlayURL())); err != nil {
 			log.Printf("open overlay: %v", err)
 		}
+	case menuOpenMiniControl:
+		if err := openBrowser(freshOpenURL(t.miniControlURL())); err != nil {
+			log.Printf("open mini control: %v", err)
+		}
 	case menuCopyOverlay:
-		if err := copyTextToClipboard(t.overlayURL); err != nil {
-			log.Printf("copy overlay url: %v", err)
+		if err := copyTextToClipboard(t.overlayURL()); err != nil {
+			log.Printf("copy source url: %v", err)
 			messageBox("BiliQueue", "复制失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
 		}
+	case menuCopyControl:
+		if err := copyTextToClipboard(t.controlURL()); err != nil {
+			log.Printf("copy control url: %v", err)
+			messageBox("BiliQueue", "复制失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
+		}
+	case menuChangePort:
+		t.changePort()
 	case menuClearQueue:
 		if messageBox("BiliQueue", "确定清空当前队列吗？", mbYesNo|mbIconQuestion|mbSetForeground) == idYes {
 			t.app.clearQueue()
@@ -344,20 +359,44 @@ func (t *trayApp) handleMenu(id uint16) {
 		openPath(filepath.Join(t.dataDir, "logs", "biliqueue.log"))
 	case menuExit:
 		log.Printf("tray exit requested")
+		closeActivePrompt()
 		procPostMessageW.Call(t.hwnd, wmClose, 0, 0)
 	}
 }
 
+func (t *trayApp) listenAddress() string  { return t.app.currentListenAddress() }
+func (t *trayApp) controlURL() string     { return urlForListen(t.listenAddress(), "/control") }
+func (t *trayApp) overlayURL() string     { return urlForListen(t.listenAddress(), "/overlay") }
+func (t *trayApp) miniControlURL() string { return urlForListen(t.listenAddress(), "/mini-control") }
+
 func (t *trayApp) openControl() {
-	if err := openBrowser(freshOpenURL(t.controlURL)); err != nil {
+	if err := openBrowser(freshOpenURL(t.controlURL())); err != nil {
 		log.Printf("open control: %v", err)
 	}
 }
 
+func (t *trayApp) changePort() {
+	current := t.listenAddress()
+	input, ok := promptListenAddress("修改端口", "请输入新的本机服务地址和端口。", current)
+	if !ok {
+		return
+	}
+	state, err := t.controller.ChangeListenAddress(input)
+	if err != nil {
+		messageBox("啊哦！", "端口修改失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
+		return
+	}
+	_ = copyTextToClipboard(state.OverlayURL)
+	messageBox("BiliQueue", "端口已修改。浏览器源地址已复制：\n"+state.OverlayURL, mbOK|mbSetForeground)
+}
+
 func (t *trayApp) shutdownServer() {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_ = t.server.Shutdown(ctx)
+	if t.app != nil {
+		t.app.prepareExit()
+	}
+	if t.controller != nil {
+		_ = t.controller.Close()
+	}
 }
 
 func openPath(path string) {
@@ -411,4 +450,8 @@ func messageBox(title, text string, flags uintptr) int {
 
 func showErrorDialog(title, message string) {
 	messageBox(title, message, mbOK|mbIconError|mbSetForeground)
+}
+
+func showInfoDialog(title, message string) {
+	showStyledInfoDialog(title, message)
 }

@@ -14,12 +14,55 @@ const deferredTextIds = ['emptyText', 'queueEmptyText', 'infoText'];
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 
+const displayVersion = value => String(value || '').replace(/-test\d+$/i, '');
+const DEFAULT_OVERLAY = {
+  height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',
+  queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueFontFile:'',queueFontWeight:500,
+  infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
+  speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,
+  currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
+  showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,
+  scrollMode:'continuous',shortAlign:'center',currentWidth:300,queueWidth:1220,infoWidth:400,
+  queueLineGap:8,queueItemGap:22,queueSecondPageSize:5,infoLineGap:4,doubleLineThreshold:8,
+  infoText:'弹幕发送“排队”加入\n达到礼物门槛可进入优先队列',emptyText:'排队空闲中',queueEmptyText:'空'
+};
+
+const RESET_GROUPS = {
+  banner: ['height','radius','currentWidth','queueWidth','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
+  queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','avatarSize','doubleLineThreshold','queueLineGap','queueItemGap','queueSecondPageSize','showAvatar','showGiftIcon'],
+  currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentFontFile','currentFontWeight','currentTextAlign','currentBackground','currentBackgroundOpacity'],
+  queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueFontFile','queueFontWeight','queueBackground','queueBackgroundOpacity'],
+  infoArea: ['infoFontSize','infoTextColor','infoTextOpacity','infoFontFile','infoFontWeight','infoTextAlign','infoLineGap','infoBackground','infoBackgroundOpacity'],
+};
+RESET_GROUPS.textArea = [...RESET_GROUPS.currentArea, ...RESET_GROUPS.queueArea, ...RESET_GROUPS.infoArea];
+
+function parseListenAddress(value) {
+  const raw = String(value || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const fallbackHost = location.hostname || '127.0.0.1';
+  const fallbackPort = location.port || '18303';
+  if (!raw) return {host:fallbackHost, port:fallbackPort};
+  if (/^\d+$/.test(raw)) return {host:'127.0.0.1', port:raw};
+  if (raw.startsWith(':')) return {host:'127.0.0.1', port:raw.slice(1) || fallbackPort};
+  const idx = raw.lastIndexOf(':');
+  if (idx > -1 && idx < raw.length - 1) return {host:raw.slice(0, idx) || '127.0.0.1', port:raw.slice(idx + 1)};
+  return {host:raw || fallbackHost, port:fallbackPort};
+}
+
+function composeListenAddress() {
+  const host = ($('listenHost')?.value || '').trim() || '127.0.0.1';
+  const port = Number(($('listenPort')?.value || '').trim());
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口需要是 1 到 65535 之间的数字');
+  return `${host}:${port}`;
+}
+
 const numericPairs = {
   height: 'heightValue',
   currentFontSize: 'currentFontSizeValue',
   queueFontSize: 'queueFontSizeValue',
   infoFontSize: 'infoFontSizeValue',
   speed: 'speedValue',
+  effectInterval: 'effectIntervalValue',
+  effectDuration: 'effectDurationValue',
   gradientTopOpacity: 'gradientTopOpacityValue',
   gradientBottomOpacity: 'gradientBottomOpacityValue',
   gradientStart: 'gradientStartValue',
@@ -37,6 +80,8 @@ const numericPairs = {
   infoWidth: 'infoWidthValue',
   doubleLineThreshold: 'doubleLineThresholdValue',
   queueLineGap: 'queueLineGapValue',
+  queueItemGap: 'queueItemGapValue',
+  queueSecondPageSize: 'queueSecondPageSizeValue',
   infoLineGap: 'infoLineGapValue',
 };
 
@@ -91,6 +136,47 @@ async function loadFontOptions(announce = false) {
   }
 }
 
+
+function initCollapsibles() {
+  document.querySelectorAll('[data-collapsible]').forEach(root => {
+    const header = root.querySelector(':scope > .card-header, :scope > .section-header');
+    const body = root.querySelector(':scope > .card-body, :scope > .section-body');
+    if (!header || !body || header.dataset.collapseBound === 'true') return;
+    header.dataset.collapseBound = 'true';
+    const openByDefault = root.dataset.defaultOpen === 'true';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'collapse-toggle';
+    const resetBtn = header.querySelector(':scope > .reset-group-btn');
+    if (resetBtn) {
+      const actions = document.createElement('div');
+      actions.className = 'collapse-actions';
+      header.appendChild(actions);
+      actions.appendChild(resetBtn);
+      actions.appendChild(toggle);
+    } else {
+      header.appendChild(toggle);
+    }
+
+    const setOpen = open => {
+      root.classList.toggle('is-collapsed', !open);
+      toggle.textContent = open ? '收起' : '展开';
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    setOpen(openByDefault);
+
+    const shouldIgnore = target => Boolean(target.closest('button, input, select, textarea, a'));
+    header.addEventListener('click', event => {
+      if (shouldIgnore(event.target)) return;
+      setOpen(root.classList.contains('is-collapsed'));
+    });
+    toggle.addEventListener('click', event => {
+      event.stopPropagation();
+      setOpen(root.classList.contains('is-collapsed'));
+    });
+  });
+}
+
 function toast(message) {
   const node = $('toast');
   node.textContent = message;
@@ -143,7 +229,7 @@ function render(nextState) {
   $('realRoomId').textContent = state.resolvedRoomId || '—';
   $('anchorName').textContent = state.anchorName || '—';
   $('roomTitle').textContent = state.roomTitle || '—';
-  $('versionLabel').textContent = `v${state.version}`;
+  if ($('appVersion')) $('appVersion').textContent = `v${displayVersion(state.version)}`;
   const loggedIn = state.loginStatus === 'logged_in';
   $('loginText').textContent = loggedIn ? (state.loginName || `UID ${state.loginUid}`) : '尚未登录';
   $('loginDetail').textContent = state.loginDetail || (loggedIn ? '登录凭证保存在本机。' : '连接弹幕前需要扫码登录，凭证只保存在本机。');
@@ -151,6 +237,9 @@ function render(nextState) {
   $('connectBtn').disabled = !loggedIn;
   $('queueCount').textContent = `${state.queue.length} 人`;
   $('pauseBtn').textContent = state.paused ? '继续排队' : '暂停排队';
+  const listenParts = parseListenAddress(cfg.listenAddress || location.host);
+  if ($('listenHost') && (firstRender || document.activeElement !== $('listenHost'))) $('listenHost').value = listenParts.host;
+  if ($('listenPort') && (firstRender || document.activeElement !== $('listenPort'))) $('listenPort').value = listenParts.port;
   $('nextBtn').disabled = state.queue.length === 0;
   $('skipBtn').disabled = state.queue.length < 2;
 
@@ -274,10 +363,11 @@ function setPair(id, value, force = false) {
 }
 
 function fillSettings(cfg, force) {
-  for (const id of ['joinCommand','cancelCommand','maxQueue']) {
+  for (const id of ['joinCommand','cancelCommand','clearCommand','maxQueue']) {
     if (force || document.activeElement !== $(id)) $(id).value = cfg[id];
   }
   if (force || document.activeElement !== $('giftThresholdBattery')) $('giftThresholdBattery').value = cfg.giftPriority?.thresholdBattery ?? 100;
+  if ($('queueEnabled')) $('queueEnabled').value = cfg.queueEnabled === false ? 'false' : 'true';
   $('giftPriorityEnabled').checked = Boolean(cfg.giftPriority?.enabled);
   $('giftSortByValue').checked = Boolean(cfg.giftPriority?.sortByValue);
 
@@ -287,6 +377,8 @@ function fillSettings(cfg, force) {
   setPair('queueFontSize', o.queueFontSize, force);
   setPair('infoFontSize', o.infoFontSize, force);
   setPair('speed', o.speed, force);
+  setPair('effectInterval', o.effectInterval ?? 4, force);
+  setPair('effectDuration', o.effectDuration ?? 0.42, force);
   setPair('gradientTopOpacity', Math.round(o.gradientTopOpacity * 100), force);
   setPair('gradientBottomOpacity', Math.round(o.gradientBottomOpacity * 100), force);
   setPair('gradientStart', o.gradientStart ?? Math.max(0, 100 - (o.gradientRange ?? 100)), force);
@@ -304,6 +396,8 @@ function fillSettings(cfg, force) {
   setPair('infoWidth', o.infoWidth, force);
   setPair('doubleLineThreshold', o.doubleLineThreshold, force);
   setPair('queueLineGap', o.queueLineGap, force);
+  setPair('queueItemGap', o.queueItemGap ?? 22, force);
+  setPair('queueSecondPageSize', o.queueSecondPageSize ?? 5, force);
   setPair('infoLineGap', o.infoLineGap, force);
 
   const plain = {
@@ -365,10 +459,13 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
+    listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
+    queueEnabled: $('queueEnabled')?.value !== 'false',
     joinCommand: $('joinCommand').value.trim() || '排队',
     cancelCommand: $('cancelCommand').value.trim() || '取消排队',
+    clearCommand: $('clearCommand').value.trim() || '清空队列',
     maxQueue: Number($('maxQueue').value) || 100,
     giftPriority: {
       enabled: $('giftPriorityEnabled').checked,
@@ -396,6 +493,8 @@ function collectConfig(options = {}) {
       infoFontWeight: Number($('infoFontWeight').value),
       infoTextAlign: $('infoTextAlign').value,
       speed: Number($('speed').value),
+      effectInterval: Number($('effectInterval').value),
+      effectDuration: Number($('effectDuration').value),
       background: $('background').value,
       gradientTopOpacity: Number($('gradientTopOpacity').value) / 100,
       gradientBottomOpacity: Number($('gradientBottomOpacity').value) / 100,
@@ -419,6 +518,8 @@ function collectConfig(options = {}) {
       queueWidth: Number($('queueWidth').value),
       infoWidth: Number($('infoWidth').value),
       queueLineGap: Number($('queueLineGap').value),
+      queueItemGap: Number($('queueItemGap').value),
+      queueSecondPageSize: Number($('queueSecondPageSize').value),
       infoLineGap: Number($('infoLineGap').value),
       doubleLineThreshold: Number($('doubleLineThreshold').value),
       infoText: includeTextDrafts ? $('infoText').value : (currentOverlay.infoText ?? $('infoText').value),
@@ -431,7 +532,7 @@ function collectConfig(options = {}) {
 function updateSizeHint() {
   const width = Number($('currentWidth').value || 0) + Number($('queueWidth').value || 0) + Number($('infoWidth').value || 0);
   const height = Number($('height').value || 0);
-  $('obsSizeHint').textContent = `OBS 建议浏览器源尺寸：${width} × ${height}，FPS 30。三个区域宽度之和即横条总宽度。`;
+  $('obsSizeHint').textContent = `建议浏览器源尺寸：${width} × ${height}，FPS 30。三个区域宽度之和即横条总宽度。`;
 }
 
 function scheduleSave() {
@@ -446,6 +547,8 @@ function bindNumericPairs() {
   for (const [rangeId, numberId] of Object.entries(numericPairs)) {
     const range = $(rangeId);
     const number = $(numberId);
+    if (!range || !number) continue;
+    addStepperButtons(number, range);
     range.addEventListener('input', () => {
       number.value = range.value;
       scheduleSave();
@@ -463,6 +566,33 @@ function bindNumericPairs() {
       scheduleSave();
     });
   }
+}
+
+function stepNumber(number, range, direction) {
+  const step = Number(number.step || range.step || 1) || 1;
+  const precision = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  const current = Number(number.value || number.min || 0) || 0;
+  number.value = (current + direction * step).toFixed(precision);
+  const value = clampNumber(number);
+  number.value = value;
+  range.value = value;
+  scheduleSave();
+}
+
+function addStepperButtons(number, range) {
+  const box = number.closest('.value-box');
+  if (!box || box.querySelector('.stepper')) return;
+  const stepper = document.createElement('div');
+  stepper.className = 'stepper';
+  stepper.innerHTML = '<button type="button" data-step="1">▲</button><button type="button" data-step="-1">▼</button>';
+  box.appendChild(stepper);
+  stepper.querySelectorAll('button').forEach(btn => {
+    let timer = null;
+    const run = () => stepNumber(number, range, Number(btn.dataset.step));
+    btn.addEventListener('click', run);
+    btn.addEventListener('mousedown', () => { timer = setInterval(run, 140); });
+    window.addEventListener('mouseup', () => { if (timer) clearInterval(timer); timer = null; });
+  });
 }
 
 function drawQRCode(text) {
@@ -559,7 +689,26 @@ async function importConfigFile(file) {
   toast(`配置已导入，旧配置已备份为 ${result.backupFile || '备份文件'}`);
 }
 
+async function changeListenAddress() {
+  let listenAddress;
+  try {
+    listenAddress = composeListenAddress();
+  } catch (err) {
+    return toast(err.message);
+  }
+  if (!confirm(`将本机服务切换到 ${listenAddress}？控制台会跳转到新地址。`)) return;
+  try {
+    const result = await api('/api/server/listen', {body:{listenAddress}});
+    const next = result.controlUrl || `${location.protocol}//${listenAddress}/control`;
+    toast('端口已修改，正在跳转');
+    setTimeout(() => { location.href = next; }, 700);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
 async function init() {
+  initCollapsibles();
   $('obsUrl').textContent = `${location.origin}/overlay`;
   const initial = await fetch('/api/state').then(r => r.json());
   render(initial);
@@ -618,7 +767,7 @@ async function init() {
     await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
   });
 
-  const settingIds = ['joinCommand','cancelCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
+  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentFontFile','currentFontWeight','currentTextAlign','queueTextColor','queueFontFile','queueFontWeight','infoTextColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon'];
   settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
   settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
   deferredTextIds.forEach(id => $(id).addEventListener('input', markTextDraftDirty));
@@ -646,23 +795,40 @@ async function init() {
     $('previewFrame').contentWindow.location.reload();
   });
 
-  $('resetStyleBtn').addEventListener('click', async () => {
-    const cfg = collectConfig();
-    cfg.overlay = {
-      height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',
-      queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueFontFile:'',queueFontWeight:500,
-      infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
-      speed:40,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,
-      currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
-      showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,
-      scrollMode:'continuous',shortAlign:'center',currentWidth:300,queueWidth:1220,infoWidth:400,
-      queueLineGap:8,infoLineGap:4,doubleLineThreshold:8,
-      infoText:'弹幕发送“排队”加入\n达到礼物门槛可进入优先队列',emptyText:'排队空闲中',queueEmptyText:'空'
-    };
-    try { await api('/api/config', {body:cfg}); toast('已恢复默认样式'); } catch (err) { toast(err.message); }
+  async function resetOverlayGroup(groupName, label) {
+    const keys = RESET_GROUPS[groupName] || [];
+    const cfg = collectConfig({includeTextDrafts:false});
+    cfg.overlay = {...cfg.overlay};
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(DEFAULT_OVERLAY, key)) cfg.overlay[key] = DEFAULT_OVERLAY[key];
+    }
+    try {
+      const result = await api('/api/config', {body:cfg});
+      if (result) render(result);
+      toast(`已恢复${label}默认值`);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  const resetBindings = [
+    ['resetBannerStyleBtn','banner','条幅大小与样式'],
+    ['resetQueueStyleBtn','queueStyle','队列调整与样式'],
+    ['resetTextAreaBtn','textArea','文字区域'],
+    ['resetCurrentAreaBtn','currentArea','当前区域'],
+    ['resetQueueAreaBtn','queueArea','队列区域'],
+    ['resetInfoAreaBtn','infoArea','说明区域'],
+  ];
+  resetBindings.forEach(([id, group, label]) => {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', event => {
+      event.stopPropagation();
+      resetOverlayGroup(group, label);
+    });
   });
   $('copyUrlBtn').addEventListener('click', async () => { await navigator.clipboard.writeText($('obsUrl').textContent); toast('地址已复制'); });
   $('openOverlayBtn').addEventListener('click', () => window.open('/overlay','_blank'));
+  $('openMiniControlBtn').addEventListener('click', () => window.open('/mini-control','_blank'));
+  $('changeListenBtn').addEventListener('click', changeListenAddress);
 }
 
 init().catch(err => toast(err.message));

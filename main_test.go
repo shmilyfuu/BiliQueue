@@ -382,7 +382,7 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	a := newApp(dir)
 	cfg := a.state().Config
-	if cfg.SchemaVersion != 7 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
+	if cfg.SchemaVersion != 8 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
 		t.Fatalf("legacy widths not migrated: %#v", cfg.Overlay)
 	}
 	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.DoubleLineThreshold != 8 {
@@ -442,7 +442,7 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	cfg.Overlay.ShortAlign = "center"
 	cfg.Overlay.EmptyText = "排队空闲中"
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 7 {
+	if cfg.SchemaVersion != 8 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.CurrentFontSize != 30 || cfg.Overlay.QueueFontSize != 30 {
@@ -505,7 +505,7 @@ func TestV6GradientRangeMigratesToStartEnd(t *testing.T) {
 	cfg.Overlay.GradientStart = 0
 	cfg.Overlay.GradientEnd = 0
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 7 {
+	if cfg.SchemaVersion != 8 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.GradientStart != 50 || cfg.Overlay.GradientEnd != 100 {

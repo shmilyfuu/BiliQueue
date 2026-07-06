@@ -9,6 +9,7 @@ let cycleWidth = 0;
 let scrolling = false;
 let pageTimer = null;
 let pageIndex = 0;
+let renderToken = 0;
 const isPreview = new URLSearchParams(location.search).has('preview');
 const loadedFonts = new Map();
 const defaultFontStack = 'Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif';
@@ -122,6 +123,7 @@ function apply(nextState) {
   root.setProperty('--queue-width', `${o.queueWidth}px`);
   root.setProperty('--info-width', `${o.infoWidth}px`);
   root.setProperty('--queue-line-gap', `${o.queueLineGap}px`);
+  root.setProperty('--queue-item-gap', `${Math.max(0, Number(o.queueItemGap ?? 22))}px`);
   root.setProperty('--info-line-gap', `${o.infoLineGap}px`);
 
   const current = state.queue[0];
@@ -133,7 +135,7 @@ function apply(nextState) {
   }
 
   const infoLines = [];
-  if (o.showCount) infoLines.push(`<div class="info-line">${state.paused ? `当前队列：${state.queue.length} 人（暂停）` : `当前队列：${state.queue.length} 人`}</div>`);
+  if (state.config.queueEnabled !== false && o.showCount) infoLines.push(`<div class="info-line">${state.paused ? `当前队列：${state.queue.length} 人（暂停）` : `当前队列：${state.queue.length} 人`}</div>`);
   if (o.showRules && String(o.infoText || '').length) infoLines.push(`<div class="info-line info-custom">${escapeHtml(o.infoText)}</div>`);
   $('info').style.display = infoLines.length ? 'flex' : 'none';
   $('info').innerHTML = `<div class="info-copy">${infoLines.join('')}</div>`;
@@ -160,6 +162,7 @@ function updatePreviewScale() {
 
 function renderQueueArea() {
   stopScroll();
+  const token = ++renderToken;
   const o = state.config.overlay;
   const waiting = state.queue.slice(1);
   const threshold = Math.max(1, Number(o.doubleLineThreshold || 8));
@@ -169,50 +172,162 @@ function renderQueueArea() {
   $('doubleRows').style.display = isDouble ? 'flex' : 'none';
 
   if (!isDouble) {
-    const html = waiting.length ? waiting.map((user,i) => chip(user,i+2,o)).join('') : `<span class="queue-empty">${escapeHtml(o.queueEmptyText || '空')}</span>`;
-    prepareTrack($('singleTrack'), $('singleRow'), html, waiting.length > 0, o);
+    if (!waiting.length) {
+      prepareStatic($('singleTrack'), `<span class="queue-empty">${escapeHtml(o.queueEmptyText || '空')}</span>`, o.shortAlign);
+      return;
+    }
+    const html = waiting.map((user,i) => chip(user,i+2,o)).join('');
+    prepareAnimatedRow($('singleTrack'), $('singleRow'), html, waiting, 2, o, false, token);
     return;
   }
 
   const firstLine = waiting.slice(0, threshold);
   const secondLine = waiting.slice(threshold);
-  $('fixedRow').style.gridTemplateColumns = `repeat(${Math.max(1, firstLine.length)}, minmax(0, 1fr))`;
   $('fixedRow').innerHTML = firstLine.map((user,i) => chip(user,i+2,o)).join('');
-  const secondHTML = secondLine.length ? secondLine.map((user,i) => chip(user,i+2+threshold,o)).join('') : `<span class="queue-empty">${escapeHtml(o.queueEmptyText || '空')}</span>`;
-  prepareTrack($('scrollTrack'), $('scrollRow'), secondHTML, secondLine.length > 0, o);
+  if (!secondLine.length) {
+    prepareStatic($('scrollTrack'), `<span class="queue-empty">${escapeHtml(o.queueEmptyText || '空')}</span>`, o.shortAlign);
+    return;
+  }
+  const secondHTML = secondLine.map((user,i) => chip(user,i+2+threshold,o)).join('');
+  prepareAnimatedRow($('scrollTrack'), $('scrollRow'), secondHTML, secondLine, 2 + threshold, o, true, token);
 }
 
-function prepareTrack(track, row, html, hasUsers, settings) {
+function prepareStatic(track, html, align) {
+  track.className = `track ${align === 'left' ? 'short-left' : 'short-center'}`;
+  track.style.transition = 'none';
+  track.style.transform = 'translate3d(0,0,0)';
+  track.style.opacity = '1';
+  track.innerHTML = `<div class="copy">${html}</div>`;
+}
+
+function prepareAnimatedRow(track, row, html, users, startIndex, settings, preferVerticalPages, token) {
   activeTrack = track;
   activeRow = row;
   track.className = 'track';
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
+  track.style.opacity = '1';
   track.innerHTML = `<div class="copy">${html}</div>`;
 
   requestAnimationFrame(() => {
-    if (activeTrack !== track) return;
+    if (activeTrack !== track || token !== renderToken) return;
     const rowWidth = row.clientWidth;
+
+    if (preferVerticalPages && (settings.scrollMode === 'paged' || settings.scrollMode === 'fade')) {
+      const pages = buildFittingPages(row, users, startIndex, settings, Number(settings.queueSecondPageSize || 5));
+      if (settings.scrollMode === 'fade') {
+        setupFadePages(track, pages, settings);
+      } else {
+        setupVerticalPages(track, pages, settings);
+      }
+      return;
+    }
+
     const first = track.querySelector('.copy');
     cycleWidth = first ? first.scrollWidth : 0;
-    scrolling = hasUsers && cycleWidth > rowWidth;
+    scrolling = cycleWidth > rowWidth;
     if (!scrolling) {
       track.classList.add(settings.shortAlign === 'left' ? 'short-left' : 'short-center');
       return;
     }
-    if (settings.scrollMode === 'paged') setupPaged(track, rowWidth);
-    else track.innerHTML += `<div class="copy" aria-hidden="true">${html}</div>`;
+    if (settings.scrollMode === 'fade') {
+      const pages = buildFittingPages(row, users, startIndex, settings, preferVerticalPages ? Number(settings.queueSecondPageSize || 5) : 999);
+      setupFadePages(track, pages, settings);
+    } else if (settings.scrollMode === 'paged') {
+      if (preferVerticalPages) {
+        const pages = buildFittingPages(row, users, startIndex, settings, Number(settings.queueSecondPageSize || 5));
+        setupVerticalPages(track, pages, settings);
+      } else {
+        setupHorizontalPaged(track, rowWidth, settings);
+      }
+    } else {
+      track.innerHTML += `<div class="copy" aria-hidden="true">${html}</div>`;
+    }
   });
 }
 
-function setupPaged(track, rowWidth) {
+function buildFittingPages(row, users, startIndex, settings, maxPerPage) {
+  const rowWidth = Math.max(1, row.clientWidth);
+  const limit = Math.max(1, Math.min(20, Number(maxPerPage || 5)));
+  const entries = users.map((user, index) => ({user, index}));
+  const pages = [];
+  let current = [];
+  const renderEntries = list => list.map(entry => chip(entry.user, startIndex + entry.index, settings)).join('');
+  const fits = list => {
+    if (!list.length) return true;
+    const probe = document.createElement('div');
+    probe.className = 'copy measure-copy';
+    probe.innerHTML = renderEntries(list);
+    row.appendChild(probe);
+    const width = probe.scrollWidth;
+    probe.remove();
+    return width <= rowWidth;
+  };
+  for (const entry of entries) {
+    const next = current.concat(entry);
+    if (next.length <= limit && fits(next)) {
+      current = next;
+      continue;
+    }
+    if (current.length) pages.push(current);
+    current = [entry];
+  }
+  if (current.length) pages.push(current);
+  return pages.map(page => `<div class="page-copy copy">${renderEntries(page)}</div>`);
+}
+
+function setupVerticalPages(track, pages, settings) {
+  track.style.transition = 'none';
+  track.style.transform = 'translate3d(0,0,0)';
+  if (pages.length <= 1) {
+    track.className = 'track short-center';
+    track.innerHTML = pages[0] || '';
+    return;
+  }
+  const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
+  const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
+  track.className = 'track page-stack vertical-pages';
+  track.innerHTML = pages.join('');
+  pageTimer = setInterval(() => {
+    pageIndex = (pageIndex + 1) % pages.length;
+    track.style.transition = `transform ${duration}s ease`;
+    track.style.transform = `translate3d(0, ${-pageIndex * 100}%, 0)`;
+  }, interval * 1000);
+}
+
+function setupFadePages(track, pages, settings) {
+  track.style.transition = 'none';
+  track.style.transform = 'translate3d(0,0,0)';
+  if (pages.length <= 1) {
+    track.className = 'track short-center';
+    track.innerHTML = pages[0] || '';
+    return;
+  }
+  const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
+  const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
+  track.className = 'track fade-stack';
+  track.innerHTML = pages.map((page, index) => `<div class="fade-page${index === 0 ? ' active' : ''}">${page}</div>`).join('');
+  track.querySelectorAll('.fade-page').forEach(page => { page.style.transitionDuration = `${duration}s`; });
+  pageTimer = setInterval(() => {
+    const pagesNodes = [...track.querySelectorAll('.fade-page')];
+    pagesNodes[pageIndex]?.classList.remove('active');
+    pageIndex = (pageIndex + 1) % pagesNodes.length;
+    pagesNodes[pageIndex]?.classList.add('active');
+  }, interval * 1000);
+}
+
+function setupHorizontalPaged(track, rowWidth, settings) {
+  track.style.transition = 'none';
+  track.style.transform = 'translate3d(0,0,0)';
+  const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
+  const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
   const step = Math.max(220, rowWidth * .86);
   const pages = Math.max(1, Math.ceil(cycleWidth / step));
   pageTimer = setInterval(() => {
     pageIndex = (pageIndex + 1) % pages;
-    track.style.transition = 'transform 420ms ease';
+    track.style.transition = `transform ${duration}s ease`;
     track.style.transform = `translate3d(${-Math.min(pageIndex * step, Math.max(0, cycleWidth - rowWidth))}px,0,0)`;
-  }, 4000);
+  }, interval * 1000);
 }
 
 function animate(now) {
