@@ -86,6 +86,8 @@ type OverlayStyle struct {
 	ShowAvatar               bool    `json:"showAvatar"`
 	ShowCount                bool    `json:"showCount"`
 	ShowRules                bool    `json:"showRules"`
+	CurrentEnabled           bool    `json:"currentEnabled"`
+	InfoEnabled              bool    `json:"infoEnabled"`
 	ShowGiftIcon             bool    `json:"showGiftIcon"`
 	ScrollMode               string  `json:"scrollMode"`
 	ShortAlign               string  `json:"shortAlign"`
@@ -198,11 +200,11 @@ type App struct {
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.12"
+const version = "0.1.13"
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 11,
+		SchemaVersion: 12,
 		ListenAddress: "127.0.0.1:18303",
 		RoomID:        "",
 		QueueEnabled:  true,
@@ -213,7 +215,7 @@ func defaultConfig() Config {
 		MaxQueue:      100,
 		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
 		Overlay: OverlayStyle{
-			Height:                   120,
+			Height:                   50,
 			FontSize:                 24,
 			CurrentFontSize:          24,
 			CurrentTextColor:         "#ffffff",
@@ -267,6 +269,8 @@ func defaultConfig() Config {
 			ShowAvatar:               true,
 			ShowCount:                true,
 			ShowRules:                true,
+			CurrentEnabled:           true,
+			InfoEnabled:              true,
 			ShowGiftIcon:             true,
 			ScrollMode:               "continuous",
 			ShortAlign:               "center",
@@ -289,9 +293,16 @@ func defaultConfig() Config {
 }
 
 func newApp(dataDir string) *App {
-	fontsDir := filepath.Join(dataDir, "fonts")
-	if filepath.Base(filepath.Clean(dataDir)) == "data" {
-		fontsDir = filepath.Join(filepath.Dir(dataDir), "fonts")
+	return newAppWithFonts(dataDir, "")
+}
+
+func newAppWithFonts(dataDir, fontsOverride string) *App {
+	fontsDir := strings.TrimSpace(fontsOverride)
+	if fontsDir == "" {
+		fontsDir = filepath.Join(dataDir, "fonts")
+		if filepath.Base(filepath.Clean(dataDir)) == "data" {
+			fontsDir = filepath.Join(filepath.Dir(dataDir), "fonts")
+		}
 	}
 	a := &App{
 		config:           defaultConfig(),
@@ -495,6 +506,7 @@ func applyConfigDefaults(cfg *Config) {
 	legacyV9 := cfg.SchemaVersion < 9
 	legacyV10 := cfg.SchemaVersion < 10
 	legacyV11 := cfg.SchemaVersion < 11
+	legacyV12 := cfg.SchemaVersion < 12
 	if strings.TrimSpace(cfg.ListenAddress) == "" {
 		cfg.ListenAddress = def.ListenAddress
 	}
@@ -520,8 +532,15 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.GiftPriority.ThresholdBattery <= 0 {
 		cfg.GiftPriority.ThresholdBattery = def.GiftPriority.ThresholdBattery
 	}
-	if cfg.Overlay.Height < 50 {
-		cfg.Overlay.Height = 50
+	if legacyV12 && cfg.Overlay.Height <= 0 {
+		cfg.Overlay.Height = def.Overlay.Height
+	}
+	if cfg.Overlay.Height < 0 {
+		cfg.Overlay.Height = 0
+	}
+	if legacyV12 {
+		cfg.Overlay.CurrentEnabled = true
+		cfg.Overlay.InfoEnabled = true
 	}
 	if cfg.Overlay.FontSize < 12 {
 		cfg.Overlay.FontSize = def.Overlay.FontSize
@@ -1860,6 +1879,7 @@ func main() {
 	}
 	listenFlag := flag.String("listen", "", "HTTP listen address")
 	dataDir := flag.String("data", defaultDataDir, "data directory")
+	fontsDir := flag.String("fonts", "", "fonts directory; defaults to sibling fonts directory for normal data dirs")
 	openBrowserOnStart := flag.Bool("open-browser", false, "open the control page on startup")
 	noBrowser := flag.Bool("no-browser", false, "do not open the control page; kept for compatibility")
 	noTray := flag.Bool("no-tray", false, "disable the Windows system tray menu")
@@ -1870,7 +1890,7 @@ func main() {
 		defer logFile.Close()
 	}
 
-	app := newApp(*dataDir)
+	app := newAppWithFonts(*dataDir, *fontsDir)
 	listen := chooseStartupListenAddress(app, *listenFlag)
 	if release, already := acquireSingleInstance(); already {
 		log.Printf("another instance is already running")

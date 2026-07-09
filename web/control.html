@@ -152,7 +152,7 @@
           <div class="card-header"><h2>大小与样式</h2><button id="resetBannerStyleBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
 <div class="settings-grid">
-<div class="field"><label>统一高度</label><div class="range-line"><input id="height" max="320" min="50" type="range"/><div class="value-box"><input id="heightValue" max="320" min="50" type="number"/><span>px</span></div></div></div>
+<div class="field"><label>统一高度</label><div class="range-line"><input id="height" max="320" min="0" type="range"/><div class="value-box"><input id="heightValue" max="320" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>圆角</label><div class="range-line"><input id="radius" max="80" min="0" type="range"/><div class="value-box"><input id="radiusValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>左侧当前区域宽度</label><div class="range-line"><input id="currentWidth" max="800" min="160" type="range"/><div class="value-box"><input id="currentWidthValue" max="800" min="160" type="number"/><span>px</span></div></div></div>
 <div class="field"><label>队列区域宽度</label><div class="range-line"><input id="queueWidth" max="2400" min="320" type="range"/><div class="value-box"><input id="queueWidthValue" max="2400" min="320" type="number"/><span>px</span></div></div></div>
@@ -162,6 +162,10 @@
 <div class="field"><label>底部透明度</label><div class="range-line"><input id="gradientBottomOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="gradientBottomOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
 <div class="field"><label>渐变开始位置</label><div class="range-line"><input id="gradientStart" max="100" min="0" type="range"/><div class="value-box"><input id="gradientStartValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
 <div class="field"><label>渐变结束位置</label><div class="range-line"><input id="gradientEnd" max="100" min="0" type="range"/><div class="value-box"><input id="gradientEndValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
+</div>
+<div class="inline-options">
+<label class="checkbox-row"><input id="currentEnabled" type="checkbox"/>启用当前区域</label>
+<label class="checkbox-row"><input id="infoEnabled" type="checkbox"/>启用说明区域</label>
 </div>
 <p class="setting-note">透明度沿用现有控制方式：0% 完全透明，100% 完全显示。开始位置前保持顶部透明度，结束位置后保持底部透明度。</p>
 

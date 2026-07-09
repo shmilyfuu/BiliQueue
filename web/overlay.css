@@ -71,6 +71,7 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
 .bg-current { width:var(--current-width); background:var(--current-bg); border-right:1px solid rgba(255,255,255,.16); }
 .bg-queue { width:var(--queue-width); background:var(--queue-bg); }
 .bg-info { width:var(--info-width); background:var(--info-bg); border-left:1px solid rgba(255,255,255,.16); }
+.bg-cell.hidden-area { display:none; }
 .bar > section { position:relative; z-index:1; }
 .fixed { display:flex; align-items:center; flex:none; padding:0 24px; overflow:hidden; }
 .current {
@@ -127,6 +128,14 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
 .viewport::before { left:0; background:linear-gradient(90deg,var(--queue-edge),transparent); }
 .viewport::after { right:0; background:linear-gradient(-90deg,var(--queue-edge),transparent); }
 .queue-row { width:100%; min-width:0; overflow:hidden; position:relative; display:flex; align-items:center; }
+.queue-row.page-mask {
+  -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,1) 18%,rgba(0,0,0,1) 82%,rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,1) 18%,rgba(0,0,0,1) 82%,rgba(0,0,0,0) 100%);
+}
+.scroll-row.page-mask.double-page-mask {
+  -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.35) 16%,rgba(0,0,0,1) 34%,rgba(0,0,0,1) 66%,rgba(0,0,0,.35) 84%,rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.35) 16%,rgba(0,0,0,1) 34%,rgba(0,0,0,1) 66%,rgba(0,0,0,.35) 84%,rgba(0,0,0,0) 100%);
+}
 .single-row { height:100%; }
 .double-rows { display:none; width:100%; min-width:0; flex-direction:column; justify-content:center; gap:var(--queue-line-gap); }
 .fixed-row { width:100%; min-width:0; display:flex; align-items:center; justify-content:center; gap:var(--queue-item-gap); padding:0 22px; overflow:hidden; }
@@ -710,13 +719,5 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
 
 /* v0.1.12-test25 paged slide with fade */
 .slide-fade-pages > .page-copy {
-  opacity:0;
-  transition-property:opacity;
-  transition-timing-function:ease;
-}
-.slide-fade-pages > .page-copy.active {
   opacity:1;
-}
-.slide-fade-pages.no-page-fade > .page-copy {
-  transition-duration:0s !important;
 }

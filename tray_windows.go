@@ -107,6 +107,7 @@ var (
 	procGlobalAlloc      = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock       = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock     = kernel32.NewProc("GlobalUnlock")
+	procMoveMemory       = kernel32.NewProc("RtlMoveMemory")
 )
 
 type wndClassEx struct {
@@ -455,9 +456,8 @@ func copyTextToClipboard(text string) error {
 	if ptr == 0 {
 		return fmt.Errorf("GlobalLock: %w", err)
 	}
-	for i, v := range utf16 {
-		*(*uint16)(unsafe.Pointer(ptr + uintptr(i*2))) = v
-	}
+	procMoveMemory.Call(ptr, uintptr(unsafe.Pointer(&utf16[0])), bytes)
+	runtime.KeepAlive(utf16)
 	procGlobalUnlock.Call(hMem)
 
 	var opened bool

@@ -12,6 +12,7 @@ let pageResetTimer = null;
 let pageIndex = 0;
 let renderToken = 0;
 let lastQueueSignature = "";
+let lastDoubleMode = null;
 const isPreview = new URLSearchParams(location.search).has('preview');
 const loadedFonts = new Map();
 const defaultFontStack = 'Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif';
@@ -129,6 +130,10 @@ function apply(nextState) {
   state = nextState;
   const o = state.config.overlay;
   const root = document.documentElement.style;
+  const currentEnabled = o.currentEnabled !== false;
+  const infoEnabled = o.infoEnabled !== false;
+  const currentWidth = currentEnabled ? Number(o.currentWidth || 0) : 0;
+  const infoWidth = infoEnabled ? Number(o.infoWidth || 0) : 0;
   root.setProperty('--bar-height', `${o.height}px`);
   root.setProperty('--current-font-size', `${o.currentFontSize}px`);
   root.setProperty('--current-text-color', rgba(o.currentTextColor || '#ffffff', o.currentTextOpacity));
@@ -177,16 +182,22 @@ function apply(nextState) {
   const edgeAlpha = Math.max(Number(o.queueBackgroundOpacity || 0), (Number(o.gradientTopOpacity || 0) + Number(o.gradientBottomOpacity || 0)) / 2);
   root.setProperty('--queue-edge', rgba(Number(o.queueBackgroundOpacity || 0) > 0 ? o.queueBackground : o.background, edgeAlpha));
   root.setProperty('--radius', `${o.radius}px`);
-  root.setProperty('--current-width', `${o.currentWidth}px`);
+  root.setProperty('--current-width', `${currentWidth}px`);
   root.setProperty('--current-side-padding', `${Math.max(0, Math.min(120, Number(o.currentSidePadding ?? 20)))}px`);
   root.setProperty('--queue-width', `${o.queueWidth}px`);
-  root.setProperty('--info-width', `${o.infoWidth}px`);
+  root.setProperty('--info-width', `${infoWidth}px`);
   root.setProperty('--queue-line-gap', `${o.queueLineGap}px`);
   root.setProperty('--queue-item-gap', `${Math.max(0, Number(o.queueItemGap ?? 22))}px`);
   root.setProperty('--info-line-gap', `${o.infoLineGap}px`);
 
+  $('current').style.display = currentEnabled ? 'flex' : 'none';
+  document.querySelector('.bg-current')?.classList.toggle('hidden-area', !currentEnabled);
+  document.querySelector('.bg-info')?.classList.toggle('hidden-area', !infoEnabled);
+
   const current = state.queue[0];
-  if (current) {
+  if (!currentEnabled) {
+    $('current').innerHTML = '';
+  } else if (current) {
     const currentAvatar = avatar(current,o.showAvatar,'current');
     const badgeText = String(o.currentBadgeText || '当前').trim();
     const avatarWithBadge = currentAvatar ? `<span class="current-avatar-stack">${currentAvatar}${badgeText ? `<span class="current-badge">${escapeHtml(badgeText)}</span>` : ''}</span>` : '';
@@ -195,11 +206,10 @@ function apply(nextState) {
   } else {
     $('current').innerHTML = `<div class="placeholder">${strokeText(o.emptyText || '排队空闲中', 'stroke-current', 'stroke-block')}</div>`;
   }
-
   const infoLines = [];
-  if (state.config.queueEnabled !== false && o.showCount) infoLines.push(`<div class="info-line">${strokeText(state.paused ? `当前队列：${state.queue.length} 人（暂停）` : `当前队列：${state.queue.length} 人`, 'stroke-info', 'stroke-block')}</div>`);
-  if (o.showRules && String(o.infoText || '').length) infoLines.push(`<div class="info-line info-custom">${strokeText(o.infoText, 'stroke-info', 'stroke-block')}</div>`);
-  $('info').style.display = infoLines.length ? 'flex' : 'none';
+  if (infoEnabled && state.config.queueEnabled !== false && o.showCount) infoLines.push(`<div class="info-line">${strokeText(state.paused ? `当前队列：${state.queue.length} 人（暂停）` : `当前队列：${state.queue.length} 人`, 'stroke-info', 'stroke-block')}</div>`);
+  if (infoEnabled && o.showRules && String(o.infoText || '').length) infoLines.push(`<div class="info-line info-custom">${strokeText(o.infoText, 'stroke-info', 'stroke-block')}</div>`);
+  $('info').style.display = infoEnabled && infoLines.length ? 'flex' : 'none';
   $('info').innerHTML = `<div class="info-copy">${infoLines.join('')}</div>`;
 
   scheduleManualEllipsis();
@@ -220,7 +230,7 @@ function queueRenderSignature(nextState) {
   const emptyText = waiting.length ? '' : (o.queueEmptyText || '');
   const keys = {
     waiting, emptyText,
-    queueWidth: o.queueWidth, height: o.height, queueFontSize: o.queueFontSize, queueFontWeight: o.queueFontWeight, queueFontFile: o.queueFontFile,
+    queueWidth: o.queueWidth, height: o.height, currentEnabled: o.currentEnabled !== false, infoEnabled: o.infoEnabled !== false, queueFontSize: o.queueFontSize, queueFontWeight: o.queueFontWeight, queueFontFile: o.queueFontFile,
     showAvatar: o.showAvatar, showGiftIcon: o.showGiftIcon, avatarSize: o.avatarSize, currentAvatarSize: o.currentAvatarSize, queueAvatarSize: o.queueAvatarSize, currentAvatarNameGap: o.currentAvatarNameGap, queueAvatarNameGap: o.queueAvatarNameGap,
     queueItemGap: o.queueItemGap, queueLineGap: o.queueLineGap, queuePageSize: o.queuePageSize ?? o.queueSecondPageSize,
     doubleLineEnabled: o.doubleLineEnabled, scrollMode: o.scrollMode, speed: o.speed, effectInterval: o.effectInterval, effectDuration: o.effectDuration,
@@ -237,7 +247,7 @@ function updatePreviewScale() {
     return;
   }
   const o = state.config.overlay;
-  const totalWidth = Number(o.currentWidth || 0) + Number(o.queueWidth || 0) + Number(o.infoWidth || 0);
+  const totalWidth = (o.currentEnabled === false ? 0 : Number(o.currentWidth || 0)) + Number(o.queueWidth || 0) + (o.infoEnabled === false ? 0 : Number(o.infoWidth || 0));
   const widthScale = totalWidth > 0 ? window.innerWidth / totalWidth : 1;
   const heightScale = Number(o.height || 0) > 0 ? window.innerHeight / Number(o.height) : 1;
   const scale = Math.min(1, widthScale, heightScale);
@@ -253,6 +263,8 @@ function renderQueueArea() {
   const pageSize = normalizePageSize(o.queuePageSize ?? o.queueSecondPageSize ?? 5);
   const doubleEnabled = o.doubleLineEnabled !== false;
   const isDouble = doubleEnabled && waiting.length > pageSize;
+  const doubleModeChanged = lastDoubleMode !== isDouble;
+  lastDoubleMode = isDouble;
 
   $('singleRow').style.display = isDouble ? 'none' : 'flex';
   $('doubleRows').style.display = isDouble ? 'flex' : 'none';
@@ -272,10 +284,18 @@ function renderQueueArea() {
     return;
   }
 
-  renderDoubleRows(waiting, o, pageSize, token);
-  if (needsLayoutRetry($('fixedRow'), o)) {
+  const renderNow = () => renderDoubleRows(waiting, o, pageSize, token);
+  if (doubleModeChanged) {
     afterLayoutReady(() => {
-      if (token === renderToken) renderDoubleRows(waiting, o, pageSize, token);
+      if (token === renderToken) renderNow();
+    });
+    return;
+  }
+
+  renderNow();
+  if (needsLayoutRetry($('fixedRow'), o) || needsLayoutRetry($('scrollRow'), o)) {
+    afterLayoutReady(() => {
+      if (token === renderToken) renderNow();
     });
   }
 }
@@ -297,6 +317,12 @@ function renderDoubleRows(waiting, settings, pageSize, token) {
   }
   activeTrack = $('scrollTrack');
   activeRow = $('scrollRow');
+  if (needsLayoutRetry($('scrollRow'), settings)) {
+    afterLayoutReady(() => {
+      if (token === renderToken) renderDoubleRows(waiting, settings, pageSize, token);
+    });
+    return;
+  }
   if (settings.scrollMode === 'continuous') {
     prepareContinuousGridRow($('scrollTrack'), $('scrollRow'), waiting.slice(pageSize), 2 + pageSize, settings, token);
   } else if (settings.scrollMode === 'fade') setupFadePages($('scrollTrack'), secondPages, settings);
@@ -304,6 +330,7 @@ function renderDoubleRows(waiting, settings, pageSize, token) {
 }
 
 function prepareStatic(track, html, align) {
+  track.parentElement?.classList.remove('page-mask', 'double-page-mask');
   track.className = `track ${align === 'left' ? 'short-left' : align === 'right' ? 'short-right' : 'short-center'}`;
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
@@ -315,6 +342,7 @@ function prepareStatic(track, html, align) {
 function prepareAnimatedRow(track, row, users, startIndex, settings, token) {
   activeTrack = track;
   activeRow = row;
+  row?.classList.remove('page-mask', 'double-page-mask');
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
   track.style.opacity = '1';
@@ -354,6 +382,7 @@ function buildContinuousGridCopy(users, startIndex, settings, metrics, hidden = 
 }
 
 function prepareContinuousGridRow(track, row, users, startIndex, settings, token) {
+  row?.classList.remove('page-mask', 'double-page-mask');
   if (activeTrack !== track || token !== renderToken) return;
   if (!users.length) {
     track.className = 'track';
@@ -463,12 +492,14 @@ function buildFittingPages(row, users, startIndex, settings, maxPerPage) {
   return buildAlignedPages(row, users, startIndex, settings, maxPerPage);
 }
 
-function setVerticalPageActive(track, index) {
+function setVerticalPageActive(track, index, extraIndexes = []) {
+  const activeIndexes = new Set([index, ...extraIndexes]);
   const nodes = [...track.children];
-  nodes.forEach((node, i) => node.classList.toggle('active', i === index));
+  nodes.forEach((node, i) => node.classList.toggle('active', activeIndexes.has(i)));
 }
 
 function setupVerticalPages(track, pages, settings) {
+  const pageMaskRow = track.parentElement;
   if (pageTimer) clearInterval(pageTimer);
   if (pageResetTimer) clearTimeout(pageResetTimer);
   pageTimer = null;
@@ -477,11 +508,14 @@ function setupVerticalPages(track, pages, settings) {
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
   if (pages.length <= 1) {
+    pageMaskRow?.classList.remove('page-mask', 'double-page-mask');
     track.className = `track ${settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center'}`;
     track.innerHTML = pages[0] || '';
     scheduleManualEllipsis();
     return;
   }
+  pageMaskRow?.classList.add('page-mask');
+  pageMaskRow?.classList.toggle('double-page-mask', pageMaskRow?.id === 'scrollRow');
   const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
   const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
   const loopPages = pages.concat(pages[0]);
@@ -496,17 +530,28 @@ function setupVerticalPages(track, pages, settings) {
       pageResetTimer = null;
     }
     pageIndex += 1;
-    setVerticalPageActive(track, pageIndex);
+    const loopingToFirst = pageIndex >= pages.length;
+    if (loopingToFirst) {
+      track.classList.add('no-page-fade');
+      setVerticalPageActive(track, pageIndex, [pageIndex - 1, 0]);
+    } else {
+      track.classList.remove('no-page-fade');
+      setVerticalPageActive(track, pageIndex);
+    }
     track.style.transition = `transform ${duration}s ease`;
     track.style.transform = `translate3d(0, ${-pageIndex * 100}%, 0)`;
-    if (pageIndex >= pages.length) {
+    if (loopingToFirst) {
       pageResetTimer = setTimeout(() => {
         track.classList.add('no-page-fade');
         track.style.transition = 'none';
         track.style.transform = 'translate3d(0,0,0)';
         pageIndex = 0;
-        setVerticalPageActive(track, 0);
-        requestAnimationFrame(() => track.classList.remove('no-page-fade'));
+        setVerticalPageActive(track, 0, [track.children.length - 1]);
+        void track.offsetHeight;
+        requestAnimationFrame(() => {
+          setVerticalPageActive(track, 0);
+          track.classList.remove('no-page-fade');
+        });
         pageResetTimer = null;
       }, duration * 1000 + 40);
     }
@@ -514,6 +559,7 @@ function setupVerticalPages(track, pages, settings) {
 }
 
 function setupFadePages(track, pages, settings) {
+  track.parentElement?.classList.remove('page-mask', 'double-page-mask');
   if (pageTimer) clearInterval(pageTimer);
   pageTimer = null;
   pageIndex = 0;

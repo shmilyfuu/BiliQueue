@@ -16,19 +16,19 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':
 
 const displayVersion = value => String(value || '').replace(/-test\d+$/i, '');
 const DEFAULT_OVERLAY = {
-  height:120,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentTextStrokeWidth:0,currentTextStrokeColor:'#000000',currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',currentBadgeText:'当前',currentBadgeTextColor:'#ffffff',currentBadgeBackground:'#6577ed',currentBadgeOpacity:.92,currentBadgeFontSize:11,currentBadgeRadius:8,currentBadgeOffsetX:-6,currentBadgeOffsetY:-6,
+  height:50,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentTextStrokeWidth:0,currentTextStrokeColor:'#000000',currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',currentBadgeText:'当前',currentBadgeTextColor:'#ffffff',currentBadgeBackground:'#6577ed',currentBadgeOpacity:.92,currentBadgeFontSize:11,currentBadgeRadius:8,currentBadgeOffsetX:-6,currentBadgeOffsetY:-6,
   queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueTextStrokeWidth:0,queueTextStrokeColor:'#000000',queueFontFile:'',queueFontWeight:500,
   infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoTextStrokeWidth:0,infoTextStrokeColor:'#000000',infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
   speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,currentAvatarSize:32,queueAvatarSize:32,currentAvatarNameGap:12,queueAvatarNameGap:10,
   currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
-  showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,
+  showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,currentEnabled:true,infoEnabled:true,
   scrollMode:'continuous',shortAlign:'center',currentWidth:300,currentSidePadding:20,queueWidth:1220,infoWidth:400,
   queueLineGap:8,queueItemGap:22,queuePageSize:5,infoLineGap:4,doubleLineEnabled:true,
   infoText:'弹幕发送“排队”加入\n达到礼物门槛可进入优先队列',emptyText:'排队空闲中',queueEmptyText:'空'
 };
 
 const RESET_GROUPS = {
-  banner: ['height','radius','currentWidth','queueWidth','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
+  banner: ['height','radius','currentEnabled','currentWidth','queueWidth','infoEnabled','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
   queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','doubleLineEnabled','queueLineGap','queueItemGap','queuePageSize','showAvatar','showGiftIcon'],
   currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentTextStrokeWidth','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentSidePadding','currentAvatarSize','currentAvatarNameGap','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOpacity','currentBadgeFontSize','currentBadgeRadius','currentBadgeOffsetX','currentBadgeOffsetY','currentBackground','currentBackgroundOpacity'],
   queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueTextStrokeWidth','queueTextStrokeColor','queueFontFile','queueFontWeight','queueAvatarSize','queueAvatarNameGap','queueBackground','queueBackgroundOpacity'],
@@ -489,6 +489,8 @@ function fillSettings(cfg, force) {
     if (force || document.activeElement !== $('queueFontFile')) fillFontSelect('queueFontFile', o.queueFontFile);
     if (force || document.activeElement !== $('infoFontFile')) fillFontSelect('infoFontFile', o.infoFontFile);
   }
+  if ($('currentEnabled')) $('currentEnabled').checked = o.currentEnabled !== false;
+  if ($('infoEnabled')) $('infoEnabled').checked = o.infoEnabled !== false;
   $('showAvatar').checked = Boolean(o.showAvatar);
   $('showCount').checked = Boolean(o.showCount);
   $('showRules').checked = Boolean(o.showRules);
@@ -509,7 +511,7 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: 11,
+    schemaVersion: 12,
     listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     queueEnabled: $('queueEnabled')?.value !== 'false',
@@ -577,6 +579,8 @@ function collectConfig(options = {}) {
       infoBackground: $('infoBackground').value,
       infoBackgroundOpacity: Number($('infoBackgroundOpacity').value) / 100,
       radius: Number($('radius').value),
+      currentEnabled: $('currentEnabled') ? $('currentEnabled').checked : true,
+      infoEnabled: $('infoEnabled') ? $('infoEnabled').checked : true,
       showAvatar: $('showAvatar').checked,
       showCount: $('showCount').checked,
       showRules: $('showRules').checked,
@@ -600,7 +604,9 @@ function collectConfig(options = {}) {
 }
 
 function updateSizeHint() {
-  const width = Number($('currentWidth').value || 0) + Number($('queueWidth').value || 0) + Number($('infoWidth').value || 0);
+  const currentWidth = $('currentEnabled')?.checked === false ? 0 : Number($('currentWidth').value || 0);
+  const infoWidth = $('infoEnabled')?.checked === false ? 0 : Number($('infoWidth').value || 0);
+  const width = currentWidth + Number($('queueWidth').value || 0) + infoWidth;
   const height = Number($('height').value || 0);
   $('obsSizeHint').textContent = `建议浏览器源尺寸：${width} × ${height}，FPS 30。三个区域宽度之和即横条总宽度。`;
 }
@@ -838,7 +844,7 @@ async function init() {
     await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
   });
 
-  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
+  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentEnabled','infoEnabled','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
   settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
   settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
   deferredTextIds.forEach(id => $(id).addEventListener('input', markTextDraftDirty));

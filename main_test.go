@@ -385,7 +385,7 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	a := newApp(dir)
 	cfg := a.state().Config
-	if cfg.SchemaVersion != 11 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
+	if cfg.SchemaVersion != 12 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
 		t.Fatalf("legacy widths not migrated: %#v", cfg.Overlay)
 	}
 	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.QueuePageSize != 5 || !cfg.Overlay.DoubleLineEnabled {
@@ -412,6 +412,14 @@ func TestNewConfigAllowsZeroLineGaps(t *testing.T) {
 	applyConfigDefaults(&cfg)
 	if cfg.Overlay.QueueLineGap != 0 || cfg.Overlay.InfoLineGap != 0 {
 		t.Fatalf("zero line gaps were overwritten: %#v", cfg.Overlay)
+	}
+}
+func TestNewConfigAllowsZeroHeight(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Overlay.Height = 0
+	applyConfigDefaults(&cfg)
+	if cfg.Overlay.Height != 0 {
+		t.Fatalf("zero height was overwritten: %#v", cfg.Overlay)
 	}
 }
 
@@ -445,7 +453,7 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	cfg.Overlay.ShortAlign = "center"
 	cfg.Overlay.EmptyText = "排队空闲中"
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 11 {
+	if cfg.SchemaVersion != 12 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.CurrentFontSize != 30 || cfg.Overlay.QueueFontSize != 30 {
@@ -508,7 +516,7 @@ func TestV6GradientRangeMigratesToStartEnd(t *testing.T) {
 	cfg.Overlay.GradientStart = 0
 	cfg.Overlay.GradientEnd = 0
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 11 {
+	if cfg.SchemaVersion != 12 {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.GradientStart != 50 || cfg.Overlay.GradientEnd != 100 {
