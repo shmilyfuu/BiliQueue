@@ -50,8 +50,10 @@ jobs:
           TAG="v${VERSION}"
           WINDOWS_ASSET="BiliQueue-v${VERSION}-windows.zip"
           SOURCE_ASSET="BiliQueue-v${VERSION}-source.zip"
+          awk 'BEGIN{seen=0} /^---[[:space:]]*$/{if(seen){exit}} {print; seen=1}' RELEASE_NOTES.md > release-notes-current.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" --clobber
+            gh release edit "$TAG" --notes-file release-notes-current.md
           else
-            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET"               --target main               --title "BiliQueue ${TAG}"               --notes-file RELEASE_NOTES.md
+            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET"               --target main               --title "BiliQueue ${TAG}"               --notes-file release-notes-current.md
           fi
