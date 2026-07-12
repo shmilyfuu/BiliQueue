@@ -3,21 +3,29 @@
 let state = null;
 let saveTimer = null;
 let dragId = null;
+let selectedQueueUserId = null;
 let mockCounter = 1;
 let qrPollTimer = null;
 let qrKey = null;
 let fontFiles = [];
 let textDraftDirty = false;
+let configWriteChain = Promise.resolve();
 
 const deferredTextIds = ['emptyText', 'queueEmptyText', 'infoText'];
+const deferredTextMirrors = {
+  emptyText: 'currentStyleText',
+  queueEmptyText: 'queueStyleText',
+  infoText: 'infoStyleText',
+};
+const COLLAPSE_STORAGE_KEY = `biliqueue:collapse:${location.pathname}`;
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 
 const displayVersion = value => String(value || '').replace(/-test\d+$/i, '');
 const DEFAULT_OVERLAY = {
-  height:50,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentTextStrokeWidth:0,currentTextStrokeColor:'#000000',currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',currentBadgeText:'当前',currentBadgeTextColor:'#ffffff',currentBadgeBackground:'#6577ed',currentBadgeOpacity:.92,currentBadgeFontSize:11,currentBadgeRadius:8,currentBadgeOffsetX:-6,currentBadgeOffsetY:-6,
-  queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueTextStrokeWidth:0,queueTextStrokeColor:'#000000',queueFontFile:'',queueFontWeight:500,
+  height:50,fontSize:24,currentFontSize:24,currentTextColor:'#ffffff',currentTextOpacity:1,currentTextStrokeWidth:0,currentTextStrokeColor:'#000000',currentFontFile:'',currentFontWeight:600,currentTextAlign:'left',currentTextLineGap:0,currentBadgeText:'当前',currentBadgeTextColor:'#ffffff',currentBadgeBackground:'#6577ed',currentBadgeOpacity:.92,currentBadgeFontSize:11,currentBadgeRadius:8,currentBadgeOffsetX:-6,currentBadgeOffsetY:-6,
+  queueFontSize:24,queueTextColor:'#ffffff',queueTextOpacity:1,queueTextStrokeWidth:0,queueTextStrokeColor:'#000000',queueFontFile:'',queueFontWeight:500,queueTextAlign:'left',queueTextLineGap:0,
   infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoTextStrokeWidth:0,infoTextStrokeColor:'#000000',infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
   speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,currentAvatarSize:32,queueAvatarSize:32,currentAvatarNameGap:12,queueAvatarNameGap:10,
   currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
@@ -30,8 +38,8 @@ const DEFAULT_OVERLAY = {
 const RESET_GROUPS = {
   banner: ['height','radius','currentEnabled','currentWidth','queueWidth','infoEnabled','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
   queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','doubleLineEnabled','queueLineGap','queueItemGap','queuePageSize','showAvatar','showGiftIcon'],
-  currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentTextStrokeWidth','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentSidePadding','currentAvatarSize','currentAvatarNameGap','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOpacity','currentBadgeFontSize','currentBadgeRadius','currentBadgeOffsetX','currentBadgeOffsetY','currentBackground','currentBackgroundOpacity'],
-  queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueTextStrokeWidth','queueTextStrokeColor','queueFontFile','queueFontWeight','queueAvatarSize','queueAvatarNameGap','queueBackground','queueBackgroundOpacity'],
+  currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentTextStrokeWidth','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentTextLineGap','currentSidePadding','currentAvatarSize','currentAvatarNameGap','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOpacity','currentBadgeFontSize','currentBadgeRadius','currentBadgeOffsetX','currentBadgeOffsetY','currentBackground','currentBackgroundOpacity'],
+  queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueTextStrokeWidth','queueTextStrokeColor','queueFontFile','queueFontWeight','queueTextAlign','queueTextLineGap','queueAvatarSize','queueAvatarNameGap','queueBackground','queueBackgroundOpacity'],
   infoArea: ['infoFontSize','infoTextColor','infoTextOpacity','infoTextStrokeWidth','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','infoLineGap','infoBackground','infoBackgroundOpacity'],
 };
 RESET_GROUPS.textArea = [...RESET_GROUPS.currentArea, ...RESET_GROUPS.queueArea, ...RESET_GROUPS.infoArea];
@@ -78,8 +86,10 @@ const numericPairs = {
   queueAvatarNameGap: 'queueAvatarNameGapValue',
   currentTextOpacity: 'currentTextOpacityValue',
   currentTextStrokeWidth: 'currentTextStrokeWidthValue',
+  currentTextLineGap: 'currentTextLineGapValue',
   queueTextOpacity: 'queueTextOpacityValue',
   queueTextStrokeWidth: 'queueTextStrokeWidthValue',
+  queueTextLineGap: 'queueTextLineGapValue',
   infoTextOpacity: 'infoTextOpacityValue',
   infoTextStrokeWidth: 'infoTextStrokeWidthValue',
   currentBackgroundOpacity: 'currentBackgroundOpacityValue',
@@ -105,6 +115,17 @@ async function api(path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
+}
+
+function cancelScheduledSave() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+}
+
+function queueConfigWrite(operation) {
+  const result = configWriteChain.catch(() => {}).then(operation);
+  configWriteChain = result.catch(() => {});
+  return result;
 }
 
 
@@ -149,12 +170,16 @@ async function loadFontOptions(announce = false) {
 
 
 function initCollapsibles() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(COLLAPSE_STORAGE_KEY) || '{}') || {}; } catch { saved = {}; }
   document.querySelectorAll('[data-collapsible]').forEach(root => {
     const header = root.querySelector(':scope > .card-header, :scope > .section-header');
     const body = root.querySelector(':scope > .card-body, :scope > .section-body');
     if (!header || !body || header.dataset.collapseBound === 'true') return;
     header.dataset.collapseBound = 'true';
     const openByDefault = root.dataset.defaultOpen === 'true';
+    const heading = header.querySelector('h1, h2, h3, h4');
+    const collapseKey = root.dataset.collapseKey || root.id || heading?.textContent.trim();
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'collapse-toggle';
@@ -169,13 +194,18 @@ function initCollapsibles() {
       header.appendChild(toggle);
     }
 
-    const setOpen = open => {
+    const setOpen = (open, persist = true) => {
       root.classList.toggle('is-collapsed', !open);
       toggle.textContent = open ? '收起' : '展开';
       toggle.setAttribute('aria-expanded', String(open));
-      requestAnimationFrame(syncTopCardHeights);
+      if (persist && collapseKey) {
+        saved[collapseKey] = open;
+        try { localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(saved)); } catch {}
+      }
+      requestAnimationFrame(syncCardHeights);
     };
-    setOpen(openByDefault);
+    const savedOpen = collapseKey && typeof saved[collapseKey] === 'boolean' ? saved[collapseKey] : openByDefault;
+    setOpen(savedOpen, false);
 
     const shouldIgnore = target => Boolean(target.closest('button, input, select, textarea, a'));
     header.addEventListener('click', event => {
@@ -189,12 +219,53 @@ function initCollapsibles() {
   });
 }
 
+function bindDeferredTextMirrors() {
+  for (const [sourceId, mirrorId] of Object.entries(deferredTextMirrors)) {
+    const source = $(sourceId);
+    const mirror = $(mirrorId);
+    if (!source || !mirror) continue;
+    source.addEventListener('input', () => { mirror.value = source.value; });
+    mirror.addEventListener('input', () => {
+      source.value = mirror.value;
+      markTextDraftDirty();
+    });
+  }
+}
+
 function toast(message) {
   const node = $('toast');
   node.textContent = message;
   node.classList.add('show');
   clearTimeout(node._timer);
   node._timer = setTimeout(() => node.classList.remove('show'), 1800);
+}
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {}
+  }
+  const scrollLeft = window.scrollX;
+  const scrollTop = window.scrollY;
+  const helper = document.createElement('textarea');
+  helper.value = value;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.inset = '0 auto auto 0';
+  helper.style.opacity = '0';
+  document.body.appendChild(helper);
+  helper.focus({preventScroll:true});
+  helper.select();
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } finally {
+    helper.remove();
+    window.scrollTo(scrollLeft, scrollTop);
+  }
+  if (!copied) throw new Error('浏览器未允许复制，请手动选择地址复制');
 }
 
 function updateTextDraftStatus() {
@@ -206,6 +277,9 @@ function updateTextDraftStatus() {
   const discardBtn = $('discardTextBtn');
   if (applyBtn) applyBtn.disabled = !textDraftDirty;
   if (discardBtn) discardBtn.disabled = !textDraftDirty;
+  document.querySelectorAll('.area-apply-text, .area-discard-text').forEach(button => {
+    button.disabled = !textDraftDirty;
+  });
 }
 
 function markTextDraftDirty() {
@@ -216,7 +290,10 @@ function markTextDraftDirty() {
 function syncTopCardHeights() {
   const left = document.querySelector('.connection-card');
   const right = document.querySelector('.service-card');
-  if (!left || !right || window.matchMedia('(max-width: 1120px)').matches) {
+  if (!left || !right ||
+      left.classList.contains('is-collapsed') ||
+      right.classList.contains('is-collapsed') ||
+      window.matchMedia('(max-width: 1120px)').matches) {
     if (left) left.style.minHeight = '';
     if (right) right.style.minHeight = '';
     return;
@@ -228,6 +305,50 @@ function syncTopCardHeights() {
     left.style.minHeight = `${Math.ceil(h)}px`;
     right.style.minHeight = `${Math.ceil(h)}px`;
   }
+}
+
+function measureExpandedCardHeight(card) {
+  const header = card.querySelector(':scope > .card-header');
+  const body = card.querySelector(':scope > .card-body');
+  if (!header || !body) return card.getBoundingClientRect().height;
+  if (!card.classList.contains('is-collapsed')) return card.getBoundingClientRect().height;
+
+  const previous = {
+    display: body.style.display,
+    position: body.style.position,
+    visibility: body.style.visibility,
+    width: body.style.width,
+    pointerEvents: body.style.pointerEvents,
+  };
+  body.style.display = 'block';
+  body.style.position = 'absolute';
+  body.style.visibility = 'hidden';
+  body.style.width = `${card.clientWidth}px`;
+  body.style.pointerEvents = 'none';
+  const borderHeight = Math.max(0, card.offsetHeight - card.clientHeight);
+  const height = header.getBoundingClientRect().height + body.getBoundingClientRect().height + borderHeight;
+  Object.assign(body.style, previous);
+  return height;
+}
+
+function syncQueueManagementHeight() {
+  const queueCard = document.querySelector('.queue-management-card');
+  const textCard = document.querySelector('.text-editor-card');
+  const rulesCard = document.querySelector('.rules-card');
+  if (!queueCard || !textCard || !rulesCard) return;
+
+  queueCard.style.height = '';
+  if (window.matchMedia('(max-width: 1120px)').matches ||
+      queueCard.classList.contains('is-collapsed')) return;
+
+  const gap = Math.max(0, parseFloat(getComputedStyle(rulesCard).marginTop) || 18);
+  const height = Math.ceil(measureExpandedCardHeight(textCard) + gap + measureExpandedCardHeight(rulesCard));
+  if (height > 0) queueCard.style.height = `${height}px`;
+}
+
+function syncCardHeights() {
+  syncTopCardHeights();
+  syncQueueManagementHeight();
 }
 
 function avatarHTML(user) {
@@ -255,7 +376,7 @@ function render(nextState) {
   const labels = {connected:'已连接',connecting:'正在连接',reconnecting:'正在重连',error:'连接失败',disconnected:'未连接'};
   $('statusText').textContent = labels[status] || status;
   $('connectionDetail').textContent = state.connectionDetail || '—';
-  $('realRoomId').textContent = state.resolvedRoomId || '—';
+  if ($('realRoomId')) $('realRoomId').textContent = state.resolvedRoomId || '\u2014';
   $('anchorName').textContent = state.anchorName ? `${state.anchorName}${state.anchorUid ? ` · UID ${state.anchorUid}` : ''}` : (state.anchorUid ? `UID ${state.anchorUid}` : '—');
   $('roomTitle').textContent = state.roomTitle || '—';
   if ($('appVersion')) $('appVersion').textContent = `v${displayVersion(state.version)}`;
@@ -277,7 +398,7 @@ function render(nextState) {
   renderQueue();
   renderLogs();
   fillSettings(cfg, firstRender);
-  requestAnimationFrame(syncTopCardHeights);
+  requestAnimationFrame(syncCardHeights);
 }
 
 function renderCurrent() {
@@ -297,34 +418,38 @@ async function submitQueueOrder(ids) {
   try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
 }
 
-async function moveQueueUser(id, delta) {
-  const ids = state.queue.map(user => user.id);
-  const from = ids.indexOf(id);
-  const to = from + delta;
-  if (from < 0 || to < 0 || to >= ids.length) return;
-  [ids[from], ids[to]] = [ids[to], ids[from]];
-  await submitQueueOrder(ids);
-}
-
 function renderQueue() {
   const list = $('queueList');
+  if (selectedQueueUserId && !state.queue.some(user => user.id === selectedQueueUserId)) {
+    selectedQueueUserId = null;
+  }
   if (!state.queue.length) {
-    list.innerHTML = '<div class="empty">当前没有排队用户</div>';
+    list.innerHTML = '<div class="empty">\u5f53\u524d\u6ca1\u6709\u6392\u961f\u7528\u6237</div>';
     return;
   }
   list.innerHTML = state.queue.map((user, index) => `
-    <div class="queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
-      <span class="drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
+    <div class="queue-item${user.priority ? ' priority' : ''}${user.id === selectedQueueUserId ? ' is-selected' : ''}" draggable="true" data-id="${escapeHtml(user.id)}" role="button" tabindex="0" aria-pressed="${user.id === selectedQueueUserId}">
+      <span class="drag-handle" title="\u62d6\u52a8\u8c03\u6574\u987a\u5e8f" aria-hidden="true">\u2261</span>
       <div class="position">${String(index + 1).padStart(2, '0')}</div>
-      <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small>${giftHTML(user)}</div></div>
-      <div class="queue-actions">
-        <button class="btn small move-btn" data-move-up="${escapeHtml(user.id)}" ${index === 0 ? 'disabled' : ''} title="上移一位">↑</button>
-        <button class="btn small move-btn" data-move-down="${escapeHtml(user.id)}" ${index === state.queue.length - 1 ? 'disabled' : ''} title="下移一位">↓</button>
-        <button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button>
-      </div>
+      <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '\u624b\u52a8\u6dfb\u52a0' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
+      ${giftHTML(user)}
+      <div class="queue-actions"><button class="btn small danger" data-remove="${escapeHtml(user.id)}">\u79fb\u9664</button></div>
     </div>`).join('');
 
   list.querySelectorAll('.queue-item').forEach(node => {
+    const toggleSelected = () => {
+      selectedQueueUserId = selectedQueueUserId === node.dataset.id ? null : node.dataset.id;
+      renderQueue();
+    };
+    node.addEventListener('click', event => {
+      if (event.target.closest('button,.drag-handle')) return;
+      toggleSelected();
+    });
+    node.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleSelected();
+    });
     node.addEventListener('dragstart', event => {
       dragId = node.dataset.id;
       node.classList.add('dragging');
@@ -362,8 +487,6 @@ function renderQueue() {
       await submitQueueOrder(ids);
     });
   });
-  list.querySelectorAll('[data-move-up]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveUp, -1)));
-  list.querySelectorAll('[data-move-down]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveDown, 1)));
   list.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', async () => {
     try { await api('/api/queue/remove', {body:{id:btn.dataset.remove}}); } catch (err) { toast(err.message); }
   }));
@@ -426,8 +549,10 @@ function fillSettings(cfg, force) {
   setPair('queueAvatarNameGap', o.queueAvatarNameGap ?? 10, force);
   setPair('currentTextOpacity', Math.round(o.currentTextOpacity * 100), force);
   setPair('currentTextStrokeWidth', o.currentTextStrokeWidth ?? 0, force);
+  setPair('currentTextLineGap', o.currentTextLineGap ?? 0, force);
   setPair('queueTextOpacity', Math.round(o.queueTextOpacity * 100), force);
   setPair('queueTextStrokeWidth', o.queueTextStrokeWidth ?? 0, force);
+  setPair('queueTextLineGap', o.queueTextLineGap ?? 0, force);
   setPair('infoTextOpacity', Math.round(o.infoTextOpacity * 100), force);
   setPair('infoTextStrokeWidth', o.infoTextStrokeWidth ?? 0, force);
   setPair('currentBackgroundOpacity', Math.round(o.currentBackgroundOpacity * 100), force);
@@ -459,6 +584,7 @@ function fillSettings(cfg, force) {
     queueTextStrokeColor:o.queueTextStrokeColor || '#000000',
     queueFontFile:o.queueFontFile,
     queueFontWeight:o.queueFontWeight,
+    queueTextAlign:o.queueTextAlign || 'left',
     infoTextColor:o.infoTextColor,
     infoTextStrokeColor:o.infoTextStrokeColor || '#000000',
     infoFontFile:o.infoFontFile,
@@ -481,8 +607,11 @@ function fillSettings(cfg, force) {
   for (const [id, value] of Object.entries(textValues)) {
     const node = $(id);
     if (force || (!textDraftDirty && document.activeElement !== node)) node.value = value ?? '';
+    const mirror = $(deferredTextMirrors[id]);
+    if (mirror && (force || (!textDraftDirty && document.activeElement !== mirror))) mirror.value = value ?? '';
   }
   updateTextDraftStatus();
+  syncTextQuickControlsFromTargets();
 
   if (fontFiles.length || o.currentFontFile || o.queueFontFile || o.infoFontFile) {
     if (force || document.activeElement !== $('currentFontFile')) fillFontSelect('currentFontFile', o.currentFontFile);
@@ -496,6 +625,7 @@ function fillSettings(cfg, force) {
   $('showRules').checked = Boolean(o.showRules);
   $('showGiftIcon').checked = Boolean(o.showGiftIcon);
   if ($('doubleLineEnabled')) $('doubleLineEnabled').checked = o.doubleLineEnabled !== false;
+  syncQueueStyleModeControls();
   updateSizeHint();
 }
 
@@ -511,7 +641,7 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: 12,
+    schemaVersion: Number(state?.config?.schemaVersion) || 12,
     listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     queueEnabled: $('queueEnabled')?.value !== 'false',
@@ -536,6 +666,7 @@ function collectConfig(options = {}) {
       currentFontFile: $('currentFontFile').value,
       currentFontWeight: Number($('currentFontWeight').value),
       currentTextAlign: $('currentTextAlign').value,
+      currentTextLineGap: Number($('currentTextLineGap').value),
       currentBadgeText: $('currentBadgeText').value.trim() || '当前',
       currentBadgeTextColor: $('currentBadgeTextColor').value,
       currentBadgeBackground: $('currentBadgeBackground').value,
@@ -551,6 +682,8 @@ function collectConfig(options = {}) {
       queueTextStrokeColor: $('queueTextStrokeColor').value,
       queueFontFile: $('queueFontFile').value,
       queueFontWeight: Number($('queueFontWeight').value),
+      queueTextAlign: $('queueTextAlign').value,
+      queueTextLineGap: Number($('queueTextLineGap').value),
       infoFontSize: Number($('infoFontSize').value),
       infoTextColor: $('infoTextColor').value,
       infoTextOpacity: Number($('infoTextOpacity').value) / 100,
@@ -604,18 +737,26 @@ function collectConfig(options = {}) {
 }
 
 function updateSizeHint() {
-  const currentWidth = $('currentEnabled')?.checked === false ? 0 : Number($('currentWidth').value || 0);
-  const infoWidth = $('infoEnabled')?.checked === false ? 0 : Number($('infoWidth').value || 0);
-  const width = currentWidth + Number($('queueWidth').value || 0) + infoWidth;
-  const height = Number($('height').value || 0);
-  $('obsSizeHint').textContent = `建议浏览器源尺寸：${width} × ${height}，FPS 30。三个区域宽度之和即横条总宽度。`;
+  $('obsSizeHint').textContent = '\u5efa\u8bae\u6d4f\u89c8\u5668\u6e90\u5c3a\u5bf8\uff1a\u53cc\u884c1920 \u00d7 75\uff1b\u5355\u884c1920 \u00d7 39\uff0c\u5176\u4ed6\u5c3a\u5bf8\u5efa\u8bae\u6309\u6bd4\u4f8b\u8c03\u6574\u3002';
+}
+
+function syncQueueStyleModeControls() {
+  const continuous = $('scrollMode')?.value === 'continuous';
+  document.querySelectorAll('[data-queue-mode="continuous"]').forEach(node => {
+    node.hidden = !continuous;
+  });
+  document.querySelectorAll('[data-queue-mode="effects"]').forEach(node => {
+    node.hidden = continuous;
+  });
 }
 
 function scheduleSave() {
   updateSizeHint();
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    try { await api('/api/config', {body:collectConfig({includeTextDrafts:false})}); } catch (err) { toast(err.message); }
+  cancelScheduledSave();
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const config = collectConfig({includeTextDrafts:false});
+    queueConfigWrite(() => api('/api/config', {body:config})).catch(err => toast(err.message));
   }, 180);
 }
 
@@ -624,6 +765,7 @@ function bindNumericPairs() {
     const range = $(rangeId);
     const number = $(numberId);
     if (!range || !number) continue;
+    if (range.closest('.text-metric-quick')) continue;
     addStepperButtons(number, range);
     range.addEventListener('input', () => {
       number.value = range.value;
@@ -669,6 +811,188 @@ function addStepperButtons(number, range) {
     btn.addEventListener('mousedown', () => { timer = setInterval(run, 140); });
     window.addEventListener('mouseup', () => { if (timer) clearInterval(timer); timer = null; });
   });
+}
+
+function syncTextQuickControlsFromTargets() {
+  document.querySelectorAll('.text-color-quick[data-color-target]').forEach(button => {
+    const target = $(button.dataset.colorTarget);
+    const swatch = button.querySelector('.color-swatch');
+    if (target && swatch) swatch.style.background = target.value || '#6577ed';
+  });
+  document.querySelectorAll('.text-metric-quick[data-range-target]').forEach(control => {
+    const target = $(control.dataset.rangeTarget);
+    const targetNumber = $(numericPairs[control.dataset.rangeTarget]);
+    const range = control.querySelector('.metric-range');
+    const number = control.querySelector('.metric-number');
+    const label = control.querySelector('.metric-label');
+    if (!target || !range || !number || !label) return;
+    label.dataset.label = control.dataset.label || label.textContent || '';
+    ['min','max','step'].forEach(attr => {
+      if (target.getAttribute(attr) !== null) {
+        range.setAttribute(attr, target.getAttribute(attr));
+        number.setAttribute(attr, target.getAttribute(attr));
+      }
+    });
+    const value = target.value || targetNumber?.value || target.min || '0';
+    range.value = value;
+    number.value = value;
+    updateTextQuickFill(control);
+  });
+}
+
+function updateTextQuickFill(control) {
+  const range = control.querySelector('.metric-range');
+  const label = control.querySelector('.metric-label');
+  if (!range || !label) return;
+  const min = Number(range.min || 0);
+  const max = Number(range.max || 100);
+  const value = Number(range.value || min);
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  label.style.setProperty('--quick-fill', Math.max(0, Math.min(100, pct)) + '%');
+}
+
+function setTextQuickMetric(control, rawValue) {
+  const targetId = control.dataset.rangeTarget;
+  const target = $(targetId);
+  const targetNumber = $(numericPairs[targetId]);
+  const range = control.querySelector('.metric-range');
+  const number = control.querySelector('.metric-number');
+  if (!target || !range || !number) return;
+  let value = Number(rawValue);
+  if (!Number.isFinite(value)) value = Number(target.min || 0);
+  if (target.min !== '') value = Math.max(Number(target.min), value);
+  if (target.max !== '') value = Math.min(Number(target.max), value);
+  const step = Number(target.step || 1) || 1;
+  const precision = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  const output = precision ? value.toFixed(precision) : String(Math.round(value));
+  target.value = output;
+  if (targetNumber) targetNumber.value = output;
+  range.value = output;
+  number.value = output;
+  updateTextQuickFill(control);
+  syncTextQuickControlsFromTargets();
+  scheduleSave();
+}
+
+function openTextQuickColorPicker(button, target) {
+  const swatch = button.querySelector('.color-swatch') || button;
+  const scrollLeft = window.scrollX;
+  const scrollTop = window.scrollY;
+  const restoreScroll = () => {
+    requestAnimationFrame(() => {
+      if (window.scrollX !== scrollLeft || window.scrollY !== scrollTop) window.scrollTo(scrollLeft, scrollTop);
+    });
+  };
+  let proxy = document.querySelector('.text-quick-color-proxy');
+  if (!proxy) {
+    proxy = document.createElement('input');
+    proxy.type = 'color';
+    proxy.className = 'text-quick-color-proxy';
+    proxy.tabIndex = -1;
+    document.body.prepend(proxy);
+  }
+  const rect = swatch.getBoundingClientRect();
+  proxy.style.left = Math.max(0, Math.min(window.innerWidth - 24, Math.round(rect.left))) + 'px';
+  proxy.style.top = Math.max(0, Math.min(window.innerHeight - 24, Math.round(rect.top))) + 'px';
+  proxy.value = target.value || '#6577ed';
+  proxy.oninput = () => {
+    target.value = proxy.value;
+    target.dispatchEvent(new Event('input', {bubbles:true}));
+    restoreScroll();
+  };
+  proxy.onchange = () => {
+    target.value = proxy.value;
+    target.dispatchEvent(new Event('change', {bubbles:true}));
+    restoreScroll();
+  };
+  proxy.onblur = restoreScroll;
+  proxy.focus({preventScroll:true});
+  if (typeof proxy.showPicker === 'function') proxy.showPicker();
+  else proxy.click();
+  restoreScroll();
+}
+
+function bindTextQuickControls() {
+  document.querySelectorAll('.text-color-quick[data-color-target]').forEach(button => {
+    const target = $(button.dataset.colorTarget);
+    if (!target) return;
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      openTextQuickColorPicker(button, target);
+    });
+    target.addEventListener('input', syncTextQuickControlsFromTargets);
+    target.addEventListener('change', syncTextQuickControlsFromTargets);
+  });
+
+  document.querySelectorAll('.text-metric-quick[data-range-target]').forEach(control => {
+    const target = $(control.dataset.rangeTarget);
+    const range = control.querySelector('.metric-range');
+    const number = control.querySelector('.metric-number');
+    const label = control.querySelector('.metric-label');
+    if (!target || !range || !number || !label) return;
+    const stepper = document.createElement('div');
+    stepper.className = 'quick-stepper';
+    stepper.innerHTML = '<button type="button" data-step="1">&#9650;</button><button type="button" data-step="-1">&#9660;</button>';
+    control.appendChild(stepper);
+    const commitNumber = () => {
+      if (number.value === '' || number.value === '-') {
+        syncTextQuickControlsFromTargets();
+        return;
+      }
+      setTextQuickMetric(control, number.value);
+    };
+    number.addEventListener('focus', () => number.select());
+    number.addEventListener('click', () => number.select());
+    number.addEventListener('input', () => {
+      range.value = number.value;
+      updateTextQuickFill(control);
+    });
+    number.addEventListener('change', commitNumber);
+    number.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commitNumber();
+        number.select();
+      }
+    });
+
+    const valueFromPointer = event => {
+      const rect = label.getBoundingClientRect();
+      const min = Number(target.min || 0);
+      const max = Number(target.max || 100);
+      const ratio = rect.width > 0 ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
+      const step = Number(target.step || 1) || 1;
+      const raw = min + (max - min) * ratio;
+      return Math.round(raw / step) * step;
+    };
+    label.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      label.setPointerCapture?.(event.pointerId);
+      setTextQuickMetric(control, valueFromPointer(event));
+      const move = moveEvent => setTextQuickMetric(control, valueFromPointer(moveEvent));
+      const up = upEvent => {
+        label.releasePointerCapture?.(upEvent.pointerId);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+    stepper.querySelectorAll('button').forEach(button => {
+      let timer = null;
+      const run = () => {
+        const step = Number(target.step || 1) || 1;
+        const current = Number(number.value || target.value || target.min || 0) || 0;
+        setTextQuickMetric(control, current + Number(button.dataset.step) * step);
+      };
+      button.addEventListener('click', run);
+      button.addEventListener('mousedown', () => { timer = setInterval(run, 140); });
+      window.addEventListener('mouseup', () => { if (timer) clearInterval(timer); timer = null; });
+    });
+    target.addEventListener('input', syncTextQuickControlsFromTargets);
+    target.addEventListener('change', syncTextQuickControlsFromTargets);
+  });
+  syncTextQuickControlsFromTargets();
 }
 
 function drawQRCode(text) {
@@ -751,6 +1075,7 @@ async function exportConfig() {
 
 async function importConfigFile(file) {
   if (!file) return;
+  cancelScheduledSave();
   if (file.size > 2 * 1024 * 1024) throw new Error('配置文件不能超过 2MB');
   let parsed;
   try {
@@ -758,7 +1083,7 @@ async function importConfigFile(file) {
   } catch {
     throw new Error('配置文件不是有效的 JSON');
   }
-  const result = await api('/api/config/import', {body: parsed});
+  const result = await queueConfigWrite(() => api('/api/config/import', {body: parsed}));
   textDraftDirty = false;
   if (result.state) render(result.state);
   updateTextDraftStatus();
@@ -774,7 +1099,8 @@ async function changeListenAddress() {
   }
   if (!confirm(`将本机服务切换到 ${listenAddress}？控制台会跳转到新地址。`)) return;
   try {
-    const result = await api('/api/server/listen', {body:{listenAddress}});
+    cancelScheduledSave();
+    const result = await queueConfigWrite(() => api('/api/server/listen', {body:{listenAddress}}));
     const next = result.controlUrl || `${location.protocol}//${listenAddress}/control`;
     toast('端口已修改，正在跳转');
     setTimeout(() => { location.href = next; }, 700);
@@ -785,11 +1111,13 @@ async function changeListenAddress() {
 
 async function init() {
   initCollapsibles();
-  window.addEventListener('resize', syncTopCardHeights);
+  window.addEventListener('resize', syncCardHeights);
   $('obsUrl').textContent = `${location.origin}/overlay`;
   const initial = await fetch('/api/state').then(r => r.json());
   render(initial);
   bindNumericPairs();
+  bindTextQuickControls();
+  bindDeferredTextMirrors();
   await loadFontOptions();
 
   const source = new EventSource('/events');
@@ -800,7 +1128,10 @@ async function init() {
   $('refreshQrBtn').addEventListener('click', startQrLogin);
   $('closeQrBtn').addEventListener('click', () => { stopQrPolling(); $('qrModal').classList.add('hidden'); });
   $('qrModal').addEventListener('click', event => { if (event.target === $('qrModal')) { stopQrPolling(); $('qrModal').classList.add('hidden'); } });
-  $('logoutBtn').addEventListener('click', async () => { if (confirm('退出当前 B 站登录？')) await api('/api/auth/logout'); });
+  $('logoutBtn').addEventListener('click', async () => {
+    if (!confirm('退出当前 B 站登录？')) return;
+    try { await api('/api/auth/logout'); } catch (err) { toast(err.message); }
+  });
   $('exportConfigBtn').addEventListener('click', () => exportConfig().then(() => toast('配置已导出')).catch(err => toast(err.message)));
   $('importConfigBtn').addEventListener('click', () => $('importConfigFile').click());
   $('importConfigFile').addEventListener('change', async event => {
@@ -818,8 +1149,10 @@ async function init() {
   $('nextBtn').addEventListener('click', () => api('/api/queue/next').catch(err => toast(err.message)));
   $('skipBtn').addEventListener('click', () => api('/api/queue/skip').catch(err => toast(err.message)));
   $('pauseBtn').addEventListener('click', () => api('/api/queue/pause', {body:{paused:!state.paused}}).catch(err => toast(err.message)));
-  $('clearBtn').addEventListener('click', async () => { if (confirm('清空当前队列？')) await api('/api/queue/clear'); });
-  $('endBtn').addEventListener('click', async () => { if (confirm('结束本场并清空队列？')) await api('/api/session/end'); });
+  $('clearBtn').addEventListener('click', async () => {
+    if (!confirm('清空当前队列？')) return;
+    try { await api('/api/queue/clear'); } catch (err) { toast(err.message); }
+  });
   $('manualBtn').addEventListener('click', async () => {
     const username = $('manualName').value.trim();
     if (!username) return;
@@ -830,28 +1163,32 @@ async function init() {
   $('mockJoinBtn').addEventListener('click', async () => {
     const uid = Date.now() + mockCounter;
     const username = `测试用户${String(mockCounter++).padStart(2,'0')}`;
-    await api('/api/debug/message', {body:{uid,username,text:state.config.joinCommand}});
-  });
-  $('mockCancelBtn').addEventListener('click', async () => {
-    const user = state.queue[state.queue.length - 1];
-    if (!user) return toast('队列为空');
-    await api('/api/debug/message', {body:{uid:user.uid,username:user.username,text:state.config.cancelCommand}});
+    try { await api('/api/debug/message', {body:{uid,username,text:state.config.joinCommand}}); } catch (err) { toast(err.message); }
   });
   $('mockGiftBtn').addEventListener('click', async () => {
-    const ordinary = state.queue.slice(1).reverse().find(user => !user.priority);
+    const selected = selectedQueueUserId ? state.queue.find(user => user.id === selectedQueueUserId) : null;
+    const ordinary = selected || state.queue.slice(1).reverse().find(user => !user.priority);
     const uid = ordinary?.uid || Date.now() + mockCounter;
     const username = ordinary?.username || `礼物用户${String(mockCounter++).padStart(2,'0')}`;
-    await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery:state.config.giftPriority.thresholdBattery}});
+    const rawBattery = $('mockGiftBattery').value.trim();
+    const battery = rawBattery === '' ? Number(state.config.giftPriority.thresholdBattery) : Number(rawBattery);
+    if (!Number.isFinite(battery) || battery <= 0) return toast('礼物价值需要是大于 0 的数字');
+    try { await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery}}); } catch (err) { toast(err.message); }
+  });
+  $('mockGiftBattery').addEventListener('keydown', event => {
+    if (event.key === 'Enter') $('mockGiftBtn').click();
   });
 
-  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentEnabled','infoEnabled','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
-  settingIds.forEach(id => $(id).addEventListener('input', scheduleSave));
-  settingIds.forEach(id => $(id).addEventListener('change', scheduleSave));
+  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentEnabled','infoEnabled','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','queueTextAlign','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
+  settingIds.forEach(id => $(id).addEventListener('input', () => { scheduleSave(); syncTextQuickControlsFromTargets(); }));
+  settingIds.forEach(id => $(id).addEventListener('change', () => { scheduleSave(); syncTextQuickControlsFromTargets(); }));
+  $('scrollMode').addEventListener('change', syncQueueStyleModeControls);
   deferredTextIds.forEach(id => $(id).addEventListener('input', markTextDraftDirty));
   $('applyTextBtn').addEventListener('click', async () => {
-    clearTimeout(saveTimer);
+    cancelScheduledSave();
+    const config = collectConfig({includeTextDrafts:true});
     try {
-      const result = await api('/api/config', {body:collectConfig({includeTextDrafts:true})});
+      const result = await queueConfigWrite(() => api('/api/config', {body:config}));
       textDraftDirty = false;
       if (result) render(result);
       updateTextDraftStatus();
@@ -866,13 +1203,28 @@ async function init() {
     updateTextDraftStatus();
     toast('已放弃未应用文字修改');
   });
+  document.querySelectorAll('.area-apply-text').forEach(button => {
+    button.addEventListener('click', () => $('applyTextBtn').click());
+  });
+  document.querySelectorAll('.area-discard-text').forEach(button => {
+    button.addEventListener('click', () => $('discardTextBtn').click());
+  });
   updateTextDraftStatus();
+
+  const backToTopBtn = $('backToTopBtn');
+  const syncBackToTop = () => backToTopBtn.classList.toggle('is-visible', window.scrollY > 360);
+  window.addEventListener('scroll', syncBackToTop, {passive:true});
+  backToTopBtn.addEventListener('click', () => {
+    window.scrollTo({top:0, behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  });
+  syncBackToTop();
   $('refreshFontsBtn').addEventListener('click', async () => {
     await loadFontOptions(true);
     $('previewFrame').contentWindow.location.reload();
   });
 
   async function resetOverlayGroup(groupName, label) {
+    cancelScheduledSave();
     const keys = RESET_GROUPS[groupName] || [];
     const cfg = collectConfig({includeTextDrafts:false});
     cfg.overlay = {...cfg.overlay};
@@ -880,7 +1232,7 @@ async function init() {
       if (Object.prototype.hasOwnProperty.call(DEFAULT_OVERLAY, key)) cfg.overlay[key] = DEFAULT_OVERLAY[key];
     }
     try {
-      const result = await api('/api/config', {body:cfg});
+      const result = await queueConfigWrite(() => api('/api/config', {body:cfg}));
       if (result) render(result);
       toast(`已恢复${label}默认值`);
     } catch (err) {
@@ -902,10 +1254,18 @@ async function init() {
       resetOverlayGroup(group, label);
     });
   });
-  $('copyUrlBtn').addEventListener('click', async () => { await navigator.clipboard.writeText($('obsUrl').textContent); toast('地址已复制'); });
+  $('copyUrlBtn').addEventListener('click', async () => {
+    try {
+      await copyText($('obsUrl').textContent);
+      toast('\u5730\u5740\u5df2\u590d\u5236');
+    } catch (err) {
+      toast(err.message);
+    }
+  });
   $('openOverlayBtn').addEventListener('click', () => window.open('/overlay','_blank'));
   $('openMiniControlBtn').addEventListener('click', () => window.open('/mini-control','_blank'));
   $('changeListenBtn').addEventListener('click', changeListenAddress);
+  $('resetListenBtn').addEventListener('click', () => { $('listenHost').value = '127.0.0.1'; $('listenPort').value = '18303'; toast('\u5df2\u6062\u590d\u9ed8\u8ba4\u670d\u52a1\u5730\u5740\uff0c\u5e94\u7528\u540e\u751f\u6548'); });
 }
 
 init().catch(err => toast(err.message));

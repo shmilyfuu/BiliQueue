@@ -12,7 +12,6 @@ let pageResetTimer = null;
 let pageIndex = 0;
 let renderToken = 0;
 let lastQueueSignature = "";
-let lastDoubleMode = null;
 const isPreview = new URLSearchParams(location.search).has('preview');
 const loadedFonts = new Map();
 const defaultFontStack = 'Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif';
@@ -101,25 +100,29 @@ function avatar(user, enabled, area = 'queue') {
   if (user?.avatar) return `<span class="${cls}">${initial}<img src="${escapeHtml(mediaImageURL(user.avatar))}" alt="" onerror="this.remove()"></span>`;
   return `<span class="${cls}">${initial}</span>`;
 }
-function giftMark(user, enabled, scope = 'stroke-queue') {
+function giftMark(user, enabled, scope = 'stroke-queue', area = 'queue') {
   if (!enabled || !user?.priority) return '';
-  const fallback = strokeText('◆', scope, 'stroke-gift');
+  const fallback = strokeText('\u25c6', scope, 'stroke-gift');
   const icon = user.giftIcon
     ? `${fallback}<img src="${escapeHtml(mediaImageURL(user.giftIcon))}" alt="" onerror="this.remove()">`
     : fallback;
-  return `<span class="gift-mark" title="${escapeHtml(user.giftName || '礼物')}">${icon}</span>`;
+  const cls = `gift-mark ${area === 'current' ? 'current-gift-mark' : 'queue-gift-mark'}`;
+  return `<span class="${cls}" title="${escapeHtml(user.giftName || '\u793c\u7269')}">${icon}</span>`;
 }
 function chip(user, index, settings) {
-  return `<div class="user-chip${user.priority ? ' priority' : ''}"><span class="position">${strokeText(String(index).padStart(2,'0'), 'stroke-queue')}</span>${avatar(user,settings.showAvatar,'queue')}${giftMark(user,settings.showGiftIcon,'stroke-queue')}<span class="name">${fittingText(user.username, 'stroke-queue')}</span></div>`;
+  const classes = `user-chip${user.priority ? ' priority' : ''}`;
+  const content = `<span class="position">${strokeText(String(index).padStart(2,'0'), 'stroke-queue')}</span>${giftMark(user,settings.showGiftIcon,'stroke-queue','queue')}${avatar(user,settings.showAvatar,'queue')}<span class="name">${fittingText(user.username, 'stroke-queue')}</span>`;
+  const priorityBg = user.priority ? '<span class="priority-bg" aria-hidden="true"></span>' : '';
+  return `<div class="${classes}"><span class="chip-main">${priorityBg}${content}</span></div>`;
 }
 
-function stopScroll() {
+function stopScroll(preserveOffset = false) {
   if (pageTimer) clearInterval(pageTimer);
   if (pageResetTimer) clearTimeout(pageResetTimer);
   pageTimer = null;
   pageResetTimer = null;
   pageIndex = 0;
-  offset = 0;
+  if (!preserveOffset) offset = 0;
   cycleWidth = 0;
   scrolling = false;
   activeTrack = null;
@@ -142,6 +145,7 @@ function apply(nextState) {
   root.setProperty('--current-text-shadow', textShadowStroke(o.currentTextStrokeWidth, o.currentTextStrokeColor));
   root.setProperty('--current-font-weight', String(o.currentFontWeight || 600));
   root.setProperty('--current-text-align', o.currentTextAlign || 'left');
+  root.setProperty('--current-text-line-gap', `${Math.max(0, Math.min(30, Number(o.currentTextLineGap || 0)))}px`);
   root.setProperty('--current-font-family', ensureFont(o.currentFontFile));
   root.setProperty('--current-badge-color', o.currentBadgeTextColor || '#ffffff');
   root.setProperty('--current-badge-bg', rgba(o.currentBadgeBackground || '#6577ed', o.currentBadgeOpacity ?? 0.92));
@@ -155,6 +159,8 @@ function apply(nextState) {
   root.setProperty('--queue-text-stroke-color', o.queueTextStrokeColor || '#000000');
   root.setProperty('--queue-text-shadow', textShadowStroke(o.queueTextStrokeWidth, o.queueTextStrokeColor));
   root.setProperty('--queue-font-weight', String(o.queueFontWeight || 500));
+  root.setProperty('--queue-empty-text-align', o.queueTextAlign || 'left');
+  root.setProperty('--queue-text-line-gap', `${Math.max(0, Math.min(30, Number(o.queueTextLineGap || 0)))}px`);
   root.setProperty('--queue-font-family', ensureFont(o.queueFontFile));
   root.setProperty('--info-font-size', `${o.infoFontSize}px`);
   root.setProperty('--info-text-color', rgba(o.infoTextColor || '#ffffff', o.infoTextOpacity));
@@ -201,7 +207,7 @@ function apply(nextState) {
     const currentAvatar = avatar(current,o.showAvatar,'current');
     const badgeText = String(o.currentBadgeText || '当前').trim();
     const avatarWithBadge = currentAvatar ? `<span class="current-avatar-stack">${currentAvatar}${badgeText ? `<span class="current-badge">${escapeHtml(badgeText)}</span>` : ''}</span>` : '';
-    const media = `${avatarWithBadge}${giftMark(current,o.showGiftIcon,'stroke-current')}`;
+    const media = `${avatarWithBadge}${giftMark(current,o.showGiftIcon,'stroke-current','current')}`;
     $('current').innerHTML = `<div class="current-user${media ? '' : ' no-media'}">${media ? `<div class="current-media">${media}</div>` : ''}<strong class="current-name">${fittingText(current.username, 'stroke-current')}</strong></div>`;
   } else {
     $('current').innerHTML = `<div class="placeholder">${strokeText(o.emptyText || '排队空闲中', 'stroke-current', 'stroke-block')}</div>`;
@@ -234,7 +240,7 @@ function queueRenderSignature(nextState) {
     showAvatar: o.showAvatar, showGiftIcon: o.showGiftIcon, avatarSize: o.avatarSize, currentAvatarSize: o.currentAvatarSize, queueAvatarSize: o.queueAvatarSize, currentAvatarNameGap: o.currentAvatarNameGap, queueAvatarNameGap: o.queueAvatarNameGap,
     queueItemGap: o.queueItemGap, queueLineGap: o.queueLineGap, queuePageSize: o.queuePageSize ?? o.queueSecondPageSize,
     doubleLineEnabled: o.doubleLineEnabled, scrollMode: o.scrollMode, speed: o.speed, effectInterval: o.effectInterval, effectDuration: o.effectDuration,
-    shortAlign: o.shortAlign
+    shortAlign: o.shortAlign, queueTextAlign: o.queueTextAlign, queueTextLineGap: o.queueTextLineGap
   };
   return JSON.stringify(keys);
 }
@@ -256,16 +262,17 @@ function updatePreviewScale() {
 }
 
 function renderQueueArea() {
-  stopScroll();
-  const token = ++renderToken;
   const o = state.config.overlay;
   const waiting = state.queue.slice(1);
   const pageSize = normalizePageSize(o.queuePageSize ?? o.queueSecondPageSize ?? 5);
   const doubleEnabled = o.doubleLineEnabled !== false;
   const isDouble = doubleEnabled && waiting.length > pageSize;
-  const doubleModeChanged = lastDoubleMode !== isDouble;
-  lastDoubleMode = isDouble;
-
+  const targetTrack = isDouble ? $('scrollTrack') : $('singleTrack');
+  const preserveContinuousOffset = o.scrollMode === 'continuous'
+    && activeTrack === targetTrack
+    && activeTrack?.classList.contains('continuous-track');
+  stopScroll(preserveContinuousOffset);
+  const token = ++renderToken;
   $('singleRow').style.display = isDouble ? 'none' : 'flex';
   $('doubleRows').style.display = isDouble ? 'flex' : 'none';
 
@@ -284,51 +291,37 @@ function renderQueueArea() {
     return;
   }
 
-  const renderNow = () => renderDoubleRows(waiting, o, pageSize, token);
-  if (doubleModeChanged) {
-    afterLayoutReady(() => {
-      if (token === renderToken) renderNow();
-    });
-    return;
-  }
-
-  renderNow();
-  if (needsLayoutRetry($('fixedRow'), o) || needsLayoutRetry($('scrollRow'), o)) {
-    afterLayoutReady(() => {
-      if (token === renderToken) renderNow();
-    });
-  }
+  renderDoubleRows(waiting, o, pageSize, token);
 }
 
 
 function renderDoubleRows(waiting, settings, pageSize, token) {
   if (token !== renderToken) return;
-  const pages = buildAlignedPages($('fixedRow'), waiting, 2, settings, pageSize);
-  $('fixedRow').innerHTML = pages[0] || '';
+  const fixedRow = $('fixedRow');
+  const scrollRow = $('scrollRow');
+  const scrollTrack = $('scrollTrack');
+  fixedRow?.classList.remove('page-mask', 'double-page-mask');
+  scrollRow?.classList.remove('page-mask', 'double-page-mask');
+  scrollTrack.style.transition = 'none';
+  scrollTrack.style.transform = 'translate3d(0,0,0)';
+  scrollTrack.style.opacity = '1';
+  const pages = buildAlignedPages(fixedRow, waiting, 2, settings, pageSize);
+  fixedRow.innerHTML = pages[0] || '';
   scheduleManualEllipsis();
   const secondPages = pages.slice(1);
   if (!secondPages.length) {
-    $('scrollTrack').className = 'track';
-    $('scrollTrack').style.transition = 'none';
-    $('scrollTrack').style.transform = 'translate3d(0,0,0)';
-    $('scrollTrack').style.opacity = '1';
-    $('scrollTrack').innerHTML = '';
+    scrollTrack.className = 'track';
+    scrollTrack.innerHTML = '';
     return;
   }
-  activeTrack = $('scrollTrack');
-  activeRow = $('scrollRow');
-  if (needsLayoutRetry($('scrollRow'), settings)) {
-    afterLayoutReady(() => {
-      if (token === renderToken) renderDoubleRows(waiting, settings, pageSize, token);
-    });
-    return;
-  }
+  activeTrack = scrollTrack;
+  activeRow = scrollRow;
   if (settings.scrollMode === 'continuous') {
-    prepareContinuousGridRow($('scrollTrack'), $('scrollRow'), waiting.slice(pageSize), 2 + pageSize, settings, token);
-  } else if (settings.scrollMode === 'fade') setupFadePages($('scrollTrack'), secondPages, settings);
-  else setupVerticalPages($('scrollTrack'), secondPages, settings);
-}
+    prepareContinuousGridRow(scrollTrack, scrollRow, waiting.slice(pageSize), 2 + pageSize, settings, token);
+  } else if (settings.scrollMode === 'fade') setupFadePages(scrollTrack, secondPages, settings);
+  else setupVerticalPages(scrollTrack, secondPages, settings);
 
+}
 function prepareStatic(track, html, align) {
   track.parentElement?.classList.remove('page-mask', 'double-page-mask');
   track.className = `track ${align === 'left' ? 'short-left' : align === 'right' ? 'short-right' : 'short-center'}`;
@@ -358,27 +351,40 @@ function prepareAnimatedRow(track, row, users, startIndex, settings, token) {
   }
 
   prepareContinuousGridRow(track, row, users, startIndex, settings, token);
-  if (needsLayoutRetry(row, settings)) {
-    afterLayoutReady(() => {
-      if (activeTrack === track && token === renderToken) prepareContinuousGridRow(track, row, users, startIndex, settings, token);
-    });
-  }
 }
 
 function continuousGridMetrics(row, settings) {
   const columns = normalizePageSize(settings.queuePageSize ?? settings.queueSecondPageSize ?? 5);
   const gap = Math.max(0, Number(settings.queueItemGap ?? 22));
   const rowWidth = getUsableRowWidth(row, settings);
-  const rawCellWidth = (rowWidth - gap * (columns + 1)) / columns;
-  const cellWidth = Math.max(1, Math.floor(rawCellWidth));
-  return { columns, gap, rowWidth, cellWidth };
+  const pageSidePadding = 28;
+  const gridWidth = Math.max(1, rowWidth - pageSidePadding * 2);
+  const rawCellWidth = (gridWidth - gap * (columns + 1)) / columns;
+  const cellWidth = Math.max(1, Math.round(rawCellWidth * 1000) / 1000);
+  return { columns, gap, rowWidth, pageSidePadding, gridWidth, cellWidth };
+}
+
+function continuousCopyWidth(userCount, metrics) {
+  const itemCount = Math.max(0, Number(userCount || 0));
+  const contentWidth = metrics.gap * 2
+    + itemCount * metrics.cellWidth
+    + Math.max(0, itemCount - 1) * metrics.gap;
+  return metrics.pageSidePadding * 2 + Math.max(metrics.gridWidth, contentWidth);
+}
+
+function normalizedContinuousOffset(value, width) {
+  if (!(width > 0)) return 0;
+  let next = Number(value) || 0;
+  next %= width;
+  if (next > 0) next -= width;
+  return next;
 }
 
 function buildContinuousGridCopy(users, startIndex, settings, metrics, hidden = false) {
   const align = queueAlignClass(settings.shortAlign);
   const items = users.map((user, index) => chip(user, startIndex + index, settings)).join('');
   const attrs = hidden ? ' aria-hidden="true"' : '';
-  return `<div class="copy continuous-copy ${align}"${attrs}><div class="continuous-grid" style="--queue-columns:${metrics.columns};--queue-grid-gap:${metrics.gap}px;--queue-cell-width:${metrics.cellWidth}px;">${items}</div></div>`;
+  return `<div class="copy continuous-copy ${align}"${attrs}><div class="continuous-grid" style="--queue-columns:${metrics.columns};--queue-grid-gap:${metrics.gap}px;--queue-cell-width:${metrics.cellWidth}px;--queue-grid-width:${metrics.gridWidth}px;">${items}</div></div>`;
 }
 
 function prepareContinuousGridRow(track, row, users, startIndex, settings, token) {
@@ -393,26 +399,24 @@ function prepareContinuousGridRow(track, row, users, startIndex, settings, token
   }
   const metrics = continuousGridMetrics(row, settings);
   const html = buildContinuousGridCopy(users, startIndex, settings, metrics, false);
+  const copyWidth = continuousCopyWidth(users.length, metrics);
+  cycleWidth = Math.max(1, Math.ceil(copyWidth));
+  scrolling = copyWidth > metrics.rowWidth + 0.5;
   track.className = 'track continuous-track';
   track.style.transition = 'none';
-  track.style.transform = 'translate3d(0,0,0)';
   track.style.opacity = '1';
-  track.innerHTML = html;
-  scheduleManualEllipsis();
-
-  afterLayoutReady(() => {
-    if (activeTrack !== track || token !== renderToken) return;
-    const first = track.querySelector('.continuous-copy');
-    cycleWidth = first ? Math.ceil(first.scrollWidth || first.getBoundingClientRect().width || 0) : 0;
-    scrolling = cycleWidth > metrics.rowWidth;
-    if (!scrolling) {
-      track.classList.add(settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center');
-      scheduleManualEllipsis();
-      return;
-    }
+  if (scrolling) {
+    offset = normalizedContinuousOffset(offset, cycleWidth);
     track.innerHTML = html + buildContinuousGridCopy(users, startIndex, settings, metrics, true);
-    scheduleManualEllipsis();
-  });
+    track.style.transform = `translate3d(${offset}px,0,0)`;
+  } else {
+    offset = 0;
+    cycleWidth = 0;
+    track.classList.add(settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center');
+    track.innerHTML = html;
+    track.style.transform = 'translate3d(0,0,0)';
+  }
+  scheduleManualEllipsis();
 }
 
 function renderPagedRow(track, row, users, startIndex, settings, token) {
@@ -509,7 +513,7 @@ function setupVerticalPages(track, pages, settings) {
   track.style.transform = 'translate3d(0,0,0)';
   if (pages.length <= 1) {
     pageMaskRow?.classList.remove('page-mask', 'double-page-mask');
-    track.className = `track ${settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center'}`;
+    track.className = 'track page-stack';
     track.innerHTML = pages[0] || '';
     scheduleManualEllipsis();
     return;
@@ -566,7 +570,7 @@ function setupFadePages(track, pages, settings) {
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
   if (pages.length <= 1) {
-    track.className = `track ${settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center'}`;
+    track.className = 'track page-stack';
     track.innerHTML = pages[0] || '';
     scheduleManualEllipsis();
     return;

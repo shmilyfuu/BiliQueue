@@ -34,6 +34,7 @@ type OverlayStyle struct {
 	CurrentTextColor         string  `json:"currentTextColor"`
 	CurrentFontWeight        int     `json:"currentFontWeight"`
 	CurrentTextAlign         string  `json:"currentTextAlign"`
+	CurrentTextLineGap       int     `json:"currentTextLineGap"`
 	CurrentBadgeText         string  `json:"currentBadgeText"`
 	CurrentBadgeTextColor    string  `json:"currentBadgeTextColor"`
 	CurrentBadgeBackground   string  `json:"currentBadgeBackground"`
@@ -49,6 +50,8 @@ type OverlayStyle struct {
 	QueueFontSize            int     `json:"queueFontSize"`
 	QueueTextColor           string  `json:"queueTextColor"`
 	QueueFontWeight          int     `json:"queueFontWeight"`
+	QueueTextAlign           string  `json:"queueTextAlign"`
+	QueueTextLineGap         int     `json:"queueTextLineGap"`
 	QueueFontFile            string  `json:"queueFontFile,omitempty"`
 	QueueTextOpacity         float64 `json:"queueTextOpacity"`
 	QueueTextStrokeWidth     int     `json:"queueTextStrokeWidth"`
@@ -200,7 +203,7 @@ type App struct {
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.13"
+const version = "0.1.14"
 
 func defaultConfig() Config {
 	return Config{
@@ -221,6 +224,7 @@ func defaultConfig() Config {
 			CurrentTextColor:         "#ffffff",
 			CurrentFontWeight:        600,
 			CurrentTextAlign:         "left",
+			CurrentTextLineGap:       0,
 			CurrentBadgeText:         "当前",
 			CurrentBadgeTextColor:    "#ffffff",
 			CurrentBadgeBackground:   "#6577ed",
@@ -235,6 +239,8 @@ func defaultConfig() Config {
 			QueueFontSize:            24,
 			QueueTextColor:           "#ffffff",
 			QueueFontWeight:          500,
+			QueueTextAlign:           "left",
+			QueueTextLineGap:         0,
 			QueueTextOpacity:         1,
 			QueueTextStrokeWidth:     0,
 			QueueTextStrokeColor:     "#000000",
@@ -639,11 +645,20 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.Overlay.QueueFontWeight < 100 || cfg.Overlay.QueueFontWeight > 900 {
 		cfg.Overlay.QueueFontWeight = def.Overlay.QueueFontWeight
 	}
+	if cfg.Overlay.QueueTextAlign != "left" && cfg.Overlay.QueueTextAlign != "center" && cfg.Overlay.QueueTextAlign != "right" {
+		cfg.Overlay.QueueTextAlign = def.Overlay.QueueTextAlign
+	}
+	if cfg.Overlay.QueueTextLineGap < 0 || cfg.Overlay.QueueTextLineGap > 30 {
+		cfg.Overlay.QueueTextLineGap = def.Overlay.QueueTextLineGap
+	}
 	if cfg.Overlay.InfoFontWeight < 100 || cfg.Overlay.InfoFontWeight > 900 {
 		cfg.Overlay.InfoFontWeight = def.Overlay.InfoFontWeight
 	}
 	if cfg.Overlay.CurrentTextAlign != "left" && cfg.Overlay.CurrentTextAlign != "center" && cfg.Overlay.CurrentTextAlign != "right" {
 		cfg.Overlay.CurrentTextAlign = def.Overlay.CurrentTextAlign
+	}
+	if cfg.Overlay.CurrentTextLineGap < 0 || cfg.Overlay.CurrentTextLineGap > 30 {
+		cfg.Overlay.CurrentTextLineGap = def.Overlay.CurrentTextLineGap
 	}
 	if legacyV10 {
 		cfg.Overlay.CurrentBadgeText = def.Overlay.CurrentBadgeText

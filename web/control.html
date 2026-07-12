@@ -13,7 +13,6 @@
         <h1>BiliQueue <span id="appVersion" class="app-version"></span></h1>
         <p>本机横向排队工具 · 浏览器源</p>
       </div>
-      <div id="statusPill" class="status-pill disconnected"><span class="status-dot"></span><span id="statusText">未连接</span></div>
     </header>
 
     <section class="preview-dock" aria-label="横条预览与地址">
@@ -21,11 +20,12 @@
         <div class="preview-address">
           <span class="preview-label">浏览器源地址</span>
           <div id="obsUrl" class="obs-url compact"></div>
+          <span id="obsSizeHint" class="setting-note"></span>
         </div>
         <div class="preview-actions">
-          <span id="obsSizeHint" class="setting-note"></span>
           <button id="copyUrlBtn" class="btn primary">复制地址</button>
           <button id="openOverlayBtn" class="btn">单独打开</button><button id="openMiniControlBtn" class="btn">简易控制页</button>
+          <div id="statusPill" class="status-pill disconnected"><span class="status-dot"></span><span id="statusText">未连接</span></div>
         </div>
       </div>
       <div class="preview-wrap"><iframe id="previewFrame" src="/overlay?preview=1" title="横条实时预览"></iframe></div>
@@ -53,7 +53,6 @@
               <button id="disconnectBtn" class="btn ghost">断开</button>
             </div>
             <div class="meta">
-              <div class="meta-box"><span>真实房间号</span><strong id="realRoomId">—</strong></div>
               <div class="meta-box"><span>主播</span><strong id="anchorName">—</strong></div>
               <div class="meta-box"><span>直播标题</span><strong id="roomTitle">—</strong></div>
             </div>
@@ -61,7 +60,7 @@
           </div>
         </article>
 
-        <article class="card collapsible-card" data-collapsible data-default-open="true" style="margin-top:18px">
+        <article class="card collapsible-card queue-management-card" data-collapsible data-default-open="true" style="margin-top:18px">
           <div class="card-header"><h2>队列管理</h2><span id="queueCount">0 人</span></div>
           <div class="card-body">
             <div id="currentCard" class="current-card"></div>
@@ -70,7 +69,6 @@
               <button id="skipBtn" class="btn">移到队尾</button>
               <button id="pauseBtn" class="btn">暂停排队</button>
               <button id="clearBtn" class="btn danger">清空队列</button>
-              <button id="endBtn" class="btn ghost">结束本场</button>
             </div>
             <div class="row" style="margin-bottom:14px">
               <input id="manualName" class="room-input" placeholder="手动添加用户名">
@@ -78,11 +76,13 @@
             </div>
             <div id="queueList" class="queue-list"></div>
             <div class="divider"></div>
-            <div class="row wrap">
-              <button id="mockJoinBtn" class="btn small">模拟“排队”</button>
-              <button id="mockCancelBtn" class="btn small">模拟“取消排队”</button>
-              <button id="mockGiftBtn" class="btn small gift">模拟礼物插队</button>
-              <span class="muted-hint">用于检查控制台和 浏览器源显示</span>
+            <div class="mock-tools">
+              <div class="mock-actions">
+                <button id="mockJoinBtn" class="btn small">模拟“排队”</button>
+                <button id="mockGiftBtn" class="btn small gift">模拟礼物插队</button>
+                <input id="mockGiftBattery" type="number" min="1" step="1" placeholder="输入礼物价值（电池）">
+              </div>
+              <p class="muted-hint">“模拟排队”和“模拟礼物插队”用于检查控制台和插件显示效果。</p>
             </div>
             <div id="lastMessage" class="log-box">尚未收到弹幕</div>
             <div id="lastGift" class="log-box gift-log">尚未收到礼物</div>
@@ -91,181 +91,265 @@
       </section>
 
       <section>
-        
-
         <article class="card collapsible-card top-sync-card service-card" data-collapsible data-default-open="true">
           <div class="card-header"><h2>配置与服务</h2></div>
           <div class="card-body">
-            <div class="settings-grid">
-              <div class="field"><label>本机服务地址</label><div class="listen-address-row"><input id="listenHost" type="text" placeholder="127.0.0.1"><span>:</span><input id="listenPort" type="number" min="1" max="65535" placeholder="18303"></div></div>
-              <div class="field service-actions"><label>端口修改</label><button id="changeListenBtn" class="btn">应用并跳转</button></div>
+            <div class="service-address-row">
+              <label class="service-input service-host-input"><span>本地服务地址</span><input id="listenHost" type="text" placeholder="127.0.0.1"></label>
+              <span class="service-colon">:</span>
+              <label class="service-input service-port-input"><input id="listenPort" type="number" min="1" max="65535" placeholder="18303"><span>端口</span></label>
+              <button id="changeListenBtn" class="btn primary">应用并跳转</button>
+              <button id="resetListenBtn" class="btn">恢复默认</button>
             </div>
-            <p class="setting-note">修改端口后，控制台会跳转到新地址。直播软件里的浏览器源地址需要手动替换一次。</p>
-            <div class="row wrap">
+            <div class="service-notes">
+              <p>修改端口应用后，控制台会跳转到新地址，直播软件里的浏览器源地址需要手动替换。</p>
+              <p>导出配置包含直播间号、排队规则和插件样式。</p>
+              <p>导出配置不包含B站登录凭证、当前队列、头像缓存或最近事件。</p>
+              <p>导入配置前会在data/backups中自动备份当前配置。</p>
+            </div>
+            <div class="service-bottom-actions">
               <button id="exportConfigBtn" class="btn primary">导出配置</button>
               <button id="importConfigBtn" class="btn">导入配置</button>
               <input id="importConfigFile" type="file" accept="application/json,.json" hidden>
             </div>
-            <p class="setting-note">导出内容包含直播间号、排队规则和全部横条样式。不会导出 B站登录凭证、当前队列、头像缓存或最近事件。导入前会在 data/backups 中自动备份当前配置。</p>
           </div>
         </article>
 
         <article class="card text-editor-card collapsible-card" data-collapsible data-default-open="true">
           <div class="card-header"><h2>文字编辑区</h2><span id="textDraftStatus" class="draft-status synced">已同步</span></div>
           <div class="card-body">
-            <div class="field"><label>当前区域无用户时显示文字</label><textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea></div>
-            <div class="field"><label>队列区域为空时显示文字</label><textarea id="queueEmptyText" rows="2" placeholder="空"></textarea></div>
-            <div class="field"><label>右侧说明内容</label><textarea id="infoText" rows="2" placeholder="支持手动换行和自动换行"></textarea></div>
+            <div class="text-editor-layout">
+              <section class="text-edit-row">
+                <div class="text-edit-copy">
+                  <label for="emptyText">当前区域（左侧）无用户时显示文字</label>
+                  <textarea id="emptyText" rows="2" placeholder="排队空闲中"></textarea>
+                </div>
+                <div class="text-quick-col">
+                  <button type="button" class="text-color-quick" data-color-target="currentTextColor"><span class="color-swatch"></span><span>文字颜色</span></button>
+                  <button type="button" class="text-color-quick" data-color-target="currentTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button>
+                </div>
+                <div class="text-quick-col text-metric-col">
+                  <div class="text-metric-quick" data-range-target="currentFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                </div>
+              </section>
+              <section class="text-edit-row">
+                <div class="text-edit-copy">
+                  <label for="queueEmptyText">队列区域（中间）为空时显示文字</label>
+                  <textarea id="queueEmptyText" rows="2" placeholder="空"></textarea>
+                </div>
+                <div class="text-quick-col">
+                  <button type="button" class="text-color-quick" data-color-target="queueTextColor"><span class="color-swatch"></span><span>文字颜色</span></button>
+                  <button type="button" class="text-color-quick" data-color-target="queueTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button>
+                </div>
+                <div class="text-quick-col text-metric-col">
+                  <div class="text-metric-quick" data-range-target="queueFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="queueTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                </div>
+              </section>
+              <section class="text-edit-row">
+                <div class="text-edit-copy">
+                  <label for="infoText">说明区域（右侧）显示文字</label>
+                  <textarea id="infoText" rows="2" placeholder="支持手动换行和自动换行"></textarea>
+                </div>
+                <div class="text-quick-col">
+                  <button type="button" class="text-color-quick" data-color-target="infoTextColor"><span class="color-swatch"></span><span>文字颜色</span></button>
+                  <button type="button" class="text-color-quick" data-color-target="infoTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button>
+                </div>
+                <div class="text-quick-col text-metric-col">
+                  <div class="text-metric-quick" data-range-target="infoFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="infoTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input class="metric-range" type="range"><input class="metric-number" type="number"><span class="metric-unit">px</span></div>
+                </div>
+              </section>
+            </div>
             <div class="text-editor-options">
               <label class="checkbox-row"><input id="showCount" type="checkbox">显示队列数</label>
               <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
             </div>
             <div class="text-editor-actions">
-              <span class="setting-note">文字编辑不会实时同步，确认后再应用。</span>
+              <span class="setting-note">文字的内容编辑不会实时同步，修改后点击应用生效。</span>
               <div class="row text-buttons">
-                <button id="applyTextBtn" class="btn primary">应用</button>
+                <button id="applyTextBtn" class="btn primary">应用文字</button>
                 <button id="discardTextBtn" class="btn ghost">放弃修改并恢复</button>
               </div>
             </div>
           </div>
         </article>
 
-        <article class="card collapsible-card" data-collapsible data-default-open="true" style="margin-top:18px">
+        <article class="card collapsible-card rules-card" data-collapsible data-default-open="true" style="margin-top:18px">
           <div class="card-header"><h2>排队与礼物规则</h2></div>
           <div class="card-body">
             <div class="settings-grid">
               <div class="field"><label>是否开启排队</label><select id="queueEnabled"><option value="true">开启排队</option><option value="false">关闭排队</option></select></div>
-              <div class="field"><label>最大人数</label><input id="maxQueue" type="number" min="1" max="1000"></div>
-              <div class="field"><label>主播清空队列指令</label><input id="clearCommand" type="text" placeholder="清空队列"></div>
-              <div class="field"><label>主播下一位指令</label><input id="nextCommand" type="text" placeholder="下一位"></div>
-              <div class="field"><label>加入指令</label><input id="joinCommand" type="text"></div>
-              <div class="field"><label>取消指令</label><input id="cancelCommand" type="text"></div>
-              <div class="field"><label>礼物门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
+              <div class="field"><label>最大排队人数</label><input id="maxQueue" type="number" min="1" max="1000"></div>
+              <div class="field"><label>清空队列指令</label><input id="clearCommand" type="text" placeholder="清空队列"></div>
+              <div class="field"><label>下一位指令</label><input id="nextCommand" type="text" placeholder="下一位"></div>
+              <div class="field"><label>加入排队指令</label><input id="joinCommand" type="text"></div>
+              <div class="field"><label>取消排队指令</label><input id="cancelCommand" type="text"></div>
+              <div class="field"><label>礼物插队门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
             </div>
-            <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
-            <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物价值大的排在礼物价值小的前面</label>
-            <p class="setting-note">只判断单次付费礼物总价值，不累计。关闭价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
+            <div class="rules-options">
+              <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
+              <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物插队价值排序</label>
+            </div>
+            <div class="rules-notes setting-note">
+              <p>礼物插队仅计算单次送出的付费礼物价值，不累计。</p>
+              <p>开启礼物插队价值排序时，送出礼物价值高的插队在礼物价值低的前面。</p>
+              <p>未开启礼物插队价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
+            </div>
           </div>
         </article>
 
-        <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
+        <article class="card collapsible-card size-style-card" data-collapsible data-default-open="false" style="margin-top:18px">
           <div class="card-header"><h2>大小与样式</h2><button id="resetBannerStyleBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
-<div class="settings-grid">
-<div class="field"><label>统一高度</label><div class="range-line"><input id="height" max="320" min="0" type="range"/><div class="value-box"><input id="heightValue" max="320" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>圆角</label><div class="range-line"><input id="radius" max="80" min="0" type="range"/><div class="value-box"><input id="radiusValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>左侧当前区域宽度</label><div class="range-line"><input id="currentWidth" max="800" min="160" type="range"/><div class="value-box"><input id="currentWidthValue" max="800" min="160" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>队列区域宽度</label><div class="range-line"><input id="queueWidth" max="2400" min="320" type="range"/><div class="value-box"><input id="queueWidthValue" max="2400" min="320" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>右侧说明区域宽度</label><div class="range-line"><input id="infoWidth" max="1000" min="180" type="range"/><div class="value-box"><input id="infoWidthValue" max="1000" min="180" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>全局背景颜色</label><input id="background" type="color"/></div>
-<div class="field"><label>顶部透明度</label><div class="range-line"><input id="gradientTopOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="gradientTopOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>底部透明度</label><div class="range-line"><input id="gradientBottomOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="gradientBottomOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>渐变开始位置</label><div class="range-line"><input id="gradientStart" max="100" min="0" type="range"/><div class="value-box"><input id="gradientStartValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>渐变结束位置</label><div class="range-line"><input id="gradientEnd" max="100" min="0" type="range"/><div class="value-box"><input id="gradientEndValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-</div>
-<div class="inline-options">
-<label class="checkbox-row"><input id="currentEnabled" type="checkbox"/>启用当前区域</label>
-<label class="checkbox-row"><input id="infoEnabled" type="checkbox"/>启用说明区域</label>
-</div>
-<p class="setting-note">透明度沿用现有控制方式：0% 完全透明，100% 完全显示。开始位置前保持顶部透明度，结束位置后保持底部透明度。</p>
+            <div class="size-style-grid">
+              <div class="text-metric-quick" data-range-target="height" data-label="统一高度"><span class="metric-label"><span>统一高度</span></span><input id="height" class="metric-range" max="320" min="0" type="range"><input id="heightValue" class="metric-number" max="320" min="0" type="number"><span class="metric-unit">px</span></div>
+              <div class="text-metric-quick" data-range-target="radius" data-label="圆角"><span class="metric-label"><span>圆角</span></span><input id="radius" class="metric-range" max="80" min="0" type="range"><input id="radiusValue" class="metric-number" max="80" min="0" type="number"><span class="metric-unit">px</span></div>
+            </div>
+            <div class="size-style-divider"></div>
+            <div class="size-style-widths">
+              <div class="text-metric-quick" data-range-target="currentWidth" data-label="当前区域（左侧）宽度"><span class="metric-label"><span>当前区域（左侧）宽度</span></span><input id="currentWidth" class="metric-range" max="800" min="160" type="range"><input id="currentWidthValue" class="metric-number" max="800" min="160" type="number"><span class="metric-unit">px</span></div>
+              <label class="checkbox-row size-toggle-cell"><input id="currentEnabled" type="checkbox">启用当前区域（左侧）</label>
+              <div class="text-metric-quick" data-range-target="queueWidth" data-label="队列区域（中间）宽度"><span class="metric-label"><span>队列区域（中间）宽度</span></span><input id="queueWidth" class="metric-range" max="2400" min="320" type="range"><input id="queueWidthValue" class="metric-number" max="2400" min="320" type="number"><span class="metric-unit">px</span></div>
+              <div class="size-background-picker"><button type="button" class="text-color-quick" data-color-target="background"><span class="color-swatch"></span><span>全局背景颜色</span></button><input id="background" type="color" hidden></div>
+              <div class="text-metric-quick" data-range-target="infoWidth" data-label="说明区域（右侧）宽度"><span class="metric-label"><span>说明区域（右侧）宽度</span></span><input id="infoWidth" class="metric-range" max="1000" min="180" type="range"><input id="infoWidthValue" class="metric-number" max="1000" min="180" type="number"><span class="metric-unit">px</span></div>
+              <label class="checkbox-row size-toggle-cell"><input id="infoEnabled" type="checkbox">启用说明区域（右侧）</label>
+            </div>
+            <div class="size-style-divider"></div>
+            <div class="size-style-grid">
+              <div class="text-metric-quick" data-range-target="gradientTopOpacity" data-label="顶部透明度"><span class="metric-label"><span>顶部透明度</span></span><input id="gradientTopOpacity" class="metric-range" max="100" min="0" type="range"><input id="gradientTopOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+              <div class="text-metric-quick" data-range-target="gradientBottomOpacity" data-label="底部透明度"><span class="metric-label"><span>底部透明度</span></span><input id="gradientBottomOpacity" class="metric-range" max="100" min="0" type="range"><input id="gradientBottomOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+              <div class="text-metric-quick" data-range-target="gradientStart" data-label="顶部渐变开始位置"><span class="metric-label"><span>顶部渐变开始位置</span></span><input id="gradientStart" class="metric-range" max="100" min="0" type="range"><input id="gradientStartValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+              <div class="text-metric-quick" data-range-target="gradientEnd" data-label="底部渐变结束位置"><span class="metric-label"><span>底部渐变结束位置</span></span><input id="gradientEnd" class="metric-range" max="100" min="0" type="range"><input id="gradientEndValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+            </div>
+            <p class="setting-note size-style-note">透明度沿用现有控制方式：0% 完全透明，100% 完全显示。开始位置前保持顶部透明度，结束位置后保持底部透明度。</p>
 
           </div>
         </article>
 
-        <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
+        <article class="card collapsible-card queue-style-card" data-collapsible data-default-open="false" style="margin-top:18px">
           <div class="card-header"><h2>队列调整与样式</h2><button id="resetQueueStyleBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
-<div class="settings-grid">
-<div class="field"><label>滚动模式</label><select id="scrollMode"><option value="continuous">连续滚动</option><option value="paged">分页滑动</option><option value="fade">淡入淡出</option></select></div>
-<div class="field"><label>短队列对齐</label><select id="shortAlign"><option value="left">靠左</option><option value="center">居中</option></select></div>
-<div class="field"><label>连续滚动速度</label><div class="range-line"><input id="speed" max="200" min="0" step="1" type="range"/><div class="value-box"><input id="speedValue" max="200" min="0" step="1" type="number"/><span>px/s</span></div></div></div>
-<div class="field"><label>分页/淡入停留时间</label><div class="range-line"><input id="effectInterval" max="20" min="1" step="0.1" type="range"/><div class="value-box"><input id="effectIntervalValue" max="20" min="1" step="0.1" type="number"/><span>s</span></div></div></div>
-<div class="field"><label>分页/淡入切换耗时</label><div class="range-line"><input id="effectDuration" max="5" min="0.1" step="0.1" type="range"/><div class="value-box"><input id="effectDurationValue" max="5" min="0.1" step="0.1" type="number"/><span>s</span></div></div></div>
-<div class="field"><label>每行列数</label><div class="range-line"><input id="queuePageSize" max="20" min="1" type="range"/><div class="value-box"><input id="queuePageSizeValue" max="20" min="1" type="number"/><span>列</span></div></div></div>
-<div class="field"><label>队列双行行间距</label><div class="range-line"><input id="queueLineGap" max="60" min="0" type="range"/><div class="value-box"><input id="queueLineGapValue" max="60" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>列间距</label><div class="range-line"><input id="queueItemGap" max="120" min="0" type="range"/><div class="value-box"><input id="queueItemGapValue" max="120" min="0" type="number"/><span>px</span></div></div></div>
-</div>
-<div class="inline-options">
-<label class="checkbox-row"><input id="doubleLineEnabled" type="checkbox"/>启用队列双行显示</label>
-<label class="checkbox-row"><input id="showAvatar" type="checkbox"/>显示用户头像</label>
-<label class="checkbox-row"><input id="showGiftIcon" type="checkbox"/>显示送出的礼物图标</label>
-</div>
-<p class="setting-note">每行列数会把队列区域固定分成对应列数；列间距同时控制左右留白和列与列之间的距离。用户名超过列宽时会用省略号显示。</p>
+            <div class="queue-style-grid">
+              <label class="queue-style-select"><span>队列翻页模式</span><select id="scrollMode"><option value="continuous">连续滚动</option><option value="paged">分页滑动</option><option value="fade">淡入淡出</option></select></label>
+              <label class="queue-style-select"><span>队列对齐方式</span><select id="shortAlign"><option value="left">靠左</option><option value="center">居中</option></select></label>
+            </div>
+            <div class="queue-style-grid queue-mode-fields">
+              <div class="text-metric-quick" data-queue-mode="continuous" data-range-target="speed" data-label="速度"><span class="metric-label"><span>速度</span></span><input id="speed" class="metric-range" max="200" min="0" step="1" type="range"><input id="speedValue" class="metric-number" max="200" min="0" step="1" type="number"><span class="metric-unit">px/s</span></div>
+              <div class="text-metric-quick" data-queue-mode="effects" data-range-target="effectInterval" data-label="停留时间"><span class="metric-label"><span>停留时间</span></span><input id="effectInterval" class="metric-range" max="20" min="1" step="0.1" type="range"><input id="effectIntervalValue" class="metric-number" max="20" min="1" step="0.1" type="number"><span class="metric-unit">s</span></div>
+              <div class="text-metric-quick" data-queue-mode="effects" data-range-target="effectDuration" data-label="切换动画时长"><span class="metric-label"><span>切换动画时长</span></span><input id="effectDuration" class="metric-range" max="5" min="0.1" step="0.1" type="range"><input id="effectDurationValue" class="metric-number" max="5" min="0.1" step="0.1" type="number"><span class="metric-unit">s</span></div>
+            </div>
+            <div class="queue-style-grid queue-style-common">
+              <div class="text-metric-quick" data-range-target="queuePageSize" data-label="每行同屏队列数"><span class="metric-label"><span>每行同屏队列数</span></span><input id="queuePageSize" class="metric-range" max="20" min="1" type="range"><input id="queuePageSizeValue" class="metric-number" max="20" min="1" type="number"><span class="metric-unit">个</span></div>
+              <div class="text-metric-quick" data-range-target="queueItemGap" data-label="队列间距"><span class="metric-label"><span>队列间距</span></span><input id="queueItemGap" class="metric-range" max="120" min="0" type="range"><input id="queueItemGapValue" class="metric-number" max="120" min="0" type="number"><span class="metric-unit">px</span></div>
+              <div class="text-metric-quick" data-range-target="queueLineGap" data-label="双行队列行间距"><span class="metric-label"><span>双行队列行间距</span></span><input id="queueLineGap" class="metric-range" max="60" min="0" type="range"><input id="queueLineGapValue" class="metric-number" max="60" min="0" type="number"><span class="metric-unit">px</span></div>
+              <label class="checkbox-row queue-style-toggle"><input id="doubleLineEnabled" type="checkbox">启用队列双行显示</label>
+            </div>
+            <div class="queue-style-options">
+              <label class="checkbox-row"><input id="showAvatar" type="checkbox">显示头像</label>
+              <label class="checkbox-row"><input id="showGiftIcon" type="checkbox">显示送出礼物图标</label>
+            </div>
+            <div class="queue-style-notes setting-note">
+              <p>每行同屏队列数会把队列区域固定分成对应的列数。</p>
+              <p>队列间距同时控制队列与队列区域左右边缘的间距和列与列之间的距离。</p>
+              <p>用户名超过列宽时，超出部分显示为省略号。</p>
+            </div>
 
           </div>
         </article>
 
-        <article class="card collapsible-card" data-collapsible data-default-open="false" style="margin-top:18px">
+        <article class="card collapsible-card text-area-style-card" data-collapsible data-collapse-key="text-area-style" data-default-open="false" style="margin-top:18px">
           <div class="card-header"><h2>文字区域样式</h2><button id="resetTextAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
           <div class="card-body">
-<div class="font-library-row">
-<div><strong>字体文件夹</strong><span>程序目录 / fonts，仅识别 ttf、otf、woff、woff2</span></div>
-<div class="row wrap"><span class="muted-hint" id="fontStatus">正在读取字体…</span><button class="btn small" id="refreshFontsBtn">刷新字体列表</button></div>
-</div>
-<section class="style-section collapsible-section" data-collapsible="" data-default-open="false">
-<div class="section-header"><h3>当前区域</h3><button id="resetCurrentAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
-<div class="section-body">
-<div class="settings-grid">
-<div class="field"><label>字体</label><select class="font-select" id="currentFontFile"><option value="">默认字体</option></select></div>
-<div class="field"><label>字号</label><div class="range-line"><input id="currentFontSize" max="72" min="12" type="range"/><div class="value-box"><input id="currentFontSizeValue" max="72" min="12" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>字重</label><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
-<div class="field"><label>文字对齐方式</label><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
-<div class="field"><label>文字颜色</label><input id="currentTextColor" type="color"/></div>
-<div class="field"><label>文字透明度</label><div class="range-line"><input id="currentTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>描边颜色</label><input id="currentTextStrokeColor" type="color"/></div>
-<div class="field"><label>描边粗细</label><div class="range-line"><input id="currentTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="currentTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景颜色</label><input id="currentBackground" type="color"/></div>
-<div class="field"><label>当前区域左右留白</label><div class="range-line"><input id="currentSidePadding" max="120" min="0" type="range"/><div class="value-box"><input id="currentSidePaddingValue" max="120" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前区域头像大小</label><div class="range-line"><input id="currentAvatarSize" max="96" min="12" type="range"/><div class="value-box"><input id="currentAvatarSizeValue" max="96" min="12" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前区域头像文字间距</label><div class="range-line"><input id="currentAvatarNameGap" max="80" min="0" type="range"/><div class="value-box"><input id="currentAvatarNameGapValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前标记文字</label><input id="currentBadgeText" type="text" placeholder="当前"/></div>
-<div class="field"><label>当前标记字号</label><div class="range-line"><input id="currentBadgeFontSize" max="28" min="8" type="range"/><div class="value-box"><input id="currentBadgeFontSizeValue" max="28" min="8" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前标记文字颜色</label><input id="currentBadgeTextColor" type="color"/></div>
-<div class="field"><label>当前标记背景颜色</label><input id="currentBadgeBackground" type="color"/></div>
-<div class="field"><label>当前标记背景透明度</label><div class="range-line"><input id="currentBadgeOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentBadgeOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>当前标记圆角</label><div class="range-line"><input id="currentBadgeRadius" max="28" min="0" type="range"/><div class="value-box"><input id="currentBadgeRadiusValue" max="28" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前标记水平偏移</label><div class="range-line"><input id="currentBadgeOffsetX" max="80" min="-80" type="range"/><div class="value-box"><input id="currentBadgeOffsetXValue" max="80" min="-80" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>当前标记垂直偏移</label><div class="range-line"><input id="currentBadgeOffsetY" max="80" min="-80" type="range"/><div class="value-box"><input id="currentBadgeOffsetYValue" max="80" min="-80" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景透明度</label><div class="range-line"><input id="currentBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="currentBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-</div>
-</div>
-</section>
-<section class="style-section collapsible-section" data-collapsible="" data-default-open="false">
-<div class="section-header"><h3>队列区域</h3><button id="resetQueueAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
-<div class="section-body">
-<div class="settings-grid">
-<div class="field"><label>字体</label><select class="font-select" id="queueFontFile"><option value="">默认字体</option></select></div>
-<div class="field"><label>字号</label><div class="range-line"><input id="queueFontSize" max="72" min="12" type="range"/><div class="value-box"><input id="queueFontSizeValue" max="72" min="12" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>字重</label><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
-<div class="field"><label>文字颜色</label><input id="queueTextColor" type="color"/></div>
-<div class="field"><label>文字透明度</label><div class="range-line"><input id="queueTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="queueTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>描边颜色</label><input id="queueTextStrokeColor" type="color"/></div>
-<div class="field"><label>描边粗细</label><div class="range-line"><input id="queueTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="queueTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景颜色</label><input id="queueBackground" type="color"/></div>
-<div class="field"><label>队列区域头像大小</label><div class="range-line"><input id="queueAvatarSize" max="96" min="12" type="range"/><div class="value-box"><input id="queueAvatarSizeValue" max="96" min="12" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>队列区域头像文字间距</label><div class="range-line"><input id="queueAvatarNameGap" max="80" min="0" type="range"/><div class="value-box"><input id="queueAvatarNameGapValue" max="80" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景透明度</label><div class="range-line"><input id="queueBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="queueBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-</div>
-</div>
-</section>
-<section class="style-section collapsible-section" data-collapsible="" data-default-open="false">
-<div class="section-header"><h3>说明区域</h3><button id="resetInfoAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
-<div class="section-body">
-<div class="settings-grid">
-<div class="field"><label>字体</label><select class="font-select" id="infoFontFile"><option value="">默认字体</option></select></div>
-<div class="field"><label>字号</label><div class="range-line"><input id="infoFontSize" max="60" min="10" type="range"/><div class="value-box"><input id="infoFontSizeValue" max="60" min="10" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>字重</label><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></div>
-<div class="field"><label>文字对齐方式</label><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></div>
-<div class="field"><label>文字颜色</label><input id="infoTextColor" type="color"/></div>
-<div class="field"><label>文字透明度</label><div class="range-line"><input id="infoTextOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="infoTextOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-<div class="field"><label>描边颜色</label><input id="infoTextStrokeColor" type="color"/></div>
-<div class="field"><label>描边粗细</label><div class="range-line"><input id="infoTextStrokeWidth" max="12" min="0" type="range"/><div class="value-box"><input id="infoTextStrokeWidthValue" max="12" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景颜色</label><input id="infoBackground" type="color"/></div>
-<div class="field"><label>说明文字行间距</label><div class="range-line"><input id="infoLineGap" max="30" min="0" type="range"/><div class="value-box"><input id="infoLineGapValue" max="30" min="0" type="number"/><span>px</span></div></div></div>
-<div class="field"><label>区域背景透明度</label><div class="range-line"><input id="infoBackgroundOpacity" max="100" min="0" type="range"/><div class="value-box"><input id="infoBackgroundOpacityValue" max="100" min="0" type="number"/><span>%</span></div></div></div>
-</div>
-</div>
-</section>
+            <div class="font-library-row area-font-library">
+              <div><strong>字体文件夹</strong><span>程序目录 /fonts</span><span>仅识别 ttf、otf、woff、woff2</span></div>
+              <div class="area-font-actions"><span class="muted-hint" id="fontStatus">正在读取字体…</span><button class="btn primary" id="refreshFontsBtn">刷新字体列表</button></div>
+            </div>
+
+            <section class="style-section collapsible-section area-style-section" data-collapsible data-collapse-key="text-area-current" data-default-open="false">
+              <div class="section-header"><h3>当前区域（左侧）</h3><button id="resetCurrentAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
+              <div class="section-body">
+                <label class="area-style-copy"><span>当前区域（左侧）无用户时显示文字</span><textarea id="currentStyleText" rows="3" placeholder="排队空闲中"></textarea></label>
+                <div class="area-style-actions"><button type="button" class="btn primary area-apply-text">应用文字</button><button type="button" class="btn ghost area-discard-text">放弃修改并恢复</button></div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <label class="area-style-select"><span>字体</span><select class="font-select" id="currentFontFile"><option value="">默认字体</option></select></label>
+                  <label class="area-style-select"><span>文字对齐方式</span><select id="currentTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></label>
+                  <div class="text-metric-quick" data-range-target="currentFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input id="currentFontSize" class="metric-range" max="72" min="12" type="range"><input id="currentFontSizeValue" class="metric-number" max="72" min="12" type="number"><span class="metric-unit">px</span></div>
+                  <label class="area-style-select"><span>字重</span><select id="currentFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></label>
+                  <div class="text-metric-quick" data-range-target="currentTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input id="currentTextStrokeWidth" class="metric-range" max="12" min="0" type="range"><input id="currentTextStrokeWidthValue" class="metric-number" max="12" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentTextOpacity" data-label="文字透明度"><span class="metric-label"><span>文字透明度</span></span><input id="currentTextOpacity" class="metric-range" max="100" min="0" type="range"><input id="currentTextOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-pair"><button type="button" class="text-color-quick" data-color-target="currentTextColor"><span class="color-swatch"></span><span>文字颜色</span></button><input id="currentTextColor" type="color" hidden><button type="button" class="text-color-quick" data-color-target="currentTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button><input id="currentTextStrokeColor" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="currentTextLineGap" data-label="文字行间距"><span class="metric-label"><span>文字行间距</span></span><input id="currentTextLineGap" class="metric-range" max="30" min="0" type="range"><input id="currentTextLineGapValue" class="metric-number" max="30" min="0" type="number"><span class="metric-unit">px</span></div>
+                </div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <div class="text-metric-quick" data-range-target="currentBackgroundOpacity" data-label="背景透明度"><span class="metric-label"><span>背景透明度</span></span><input id="currentBackgroundOpacity" class="metric-range" max="100" min="0" type="range"><input id="currentBackgroundOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-single"><button type="button" class="text-color-quick" data-color-target="currentBackground"><span class="color-swatch"></span><span>背景颜色</span></button><input id="currentBackground" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="currentSidePadding" data-label="区域左右留白"><span class="metric-label"><span>区域左右留白</span></span><input id="currentSidePadding" class="metric-range" max="120" min="0" type="range"><input id="currentSidePaddingValue" class="metric-number" max="120" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentAvatarSize" data-label="头像大小"><span class="metric-label"><span>头像大小</span></span><input id="currentAvatarSize" class="metric-range" max="96" min="12" type="range"><input id="currentAvatarSizeValue" class="metric-number" max="96" min="12" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentAvatarNameGap" data-label="头像文字间距"><span class="metric-label"><span>头像文字间距</span></span><input id="currentAvatarNameGap" class="metric-range" max="80" min="0" type="range"><input id="currentAvatarNameGapValue" class="metric-number" max="80" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <label class="area-style-value"><span>当前标记文字</span><input id="currentBadgeText" type="text" placeholder="当前"></label>
+                  <div class="text-metric-quick" data-range-target="currentBadgeFontSize" data-label="当前标记字号"><span class="metric-label"><span>当前标记字号</span></span><input id="currentBadgeFontSize" class="metric-range" max="28" min="8" type="range"><input id="currentBadgeFontSizeValue" class="metric-number" max="28" min="8" type="number"><span class="metric-unit">px</span></div>
+                  <div class="area-color-pair"><button type="button" class="text-color-quick" data-color-target="currentBadgeTextColor"><span class="color-swatch"></span><span>标记文字颜色</span></button><input id="currentBadgeTextColor" type="color" hidden><button type="button" class="text-color-quick" data-color-target="currentBadgeBackground"><span class="color-swatch"></span><span>标记背景颜色</span></button><input id="currentBadgeBackground" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="currentBadgeOpacity" data-label="标记背景透明度"><span class="metric-label"><span>标记背景透明度</span></span><input id="currentBadgeOpacity" class="metric-range" max="100" min="0" type="range"><input id="currentBadgeOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="text-metric-quick" data-range-target="currentBadgeRadius" data-label="标记圆角"><span class="metric-label"><span>标记圆角</span></span><input id="currentBadgeRadius" class="metric-range" max="28" min="0" type="range"><input id="currentBadgeRadiusValue" class="metric-number" max="28" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentBadgeOffsetX" data-label="标记水平偏移"><span class="metric-label"><span>标记水平偏移</span></span><input id="currentBadgeOffsetX" class="metric-range" max="80" min="-80" type="range"><input id="currentBadgeOffsetXValue" class="metric-number" max="80" min="-80" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="currentBadgeOffsetY" data-label="标记垂直偏移"><span class="metric-label"><span>标记垂直偏移</span></span><input id="currentBadgeOffsetY" class="metric-range" max="80" min="-80" type="range"><input id="currentBadgeOffsetYValue" class="metric-number" max="80" min="-80" type="number"><span class="metric-unit">px</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="style-section collapsible-section area-style-section" data-collapsible data-collapse-key="text-area-queue" data-default-open="false">
+              <div class="section-header"><h3>队列区域（中间）</h3><button id="resetQueueAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
+              <div class="section-body">
+                <label class="area-style-copy"><span>队列区域（中间）为空时显示文字</span><textarea id="queueStyleText" rows="3" placeholder="空"></textarea></label>
+                <div class="area-style-actions"><button type="button" class="btn primary area-apply-text">应用文字</button><button type="button" class="btn ghost area-discard-text">放弃修改并恢复</button></div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <label class="area-style-select"><span>字体</span><select class="font-select" id="queueFontFile"><option value="">默认字体</option></select></label>
+                  <label class="area-style-select"><span>文字对齐方式</span><select id="queueTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></label>
+                  <div class="text-metric-quick" data-range-target="queueFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input id="queueFontSize" class="metric-range" max="72" min="12" type="range"><input id="queueFontSizeValue" class="metric-number" max="72" min="12" type="number"><span class="metric-unit">px</span></div>
+                  <label class="area-style-select"><span>字重</span><select id="queueFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></label>
+                  <div class="text-metric-quick" data-range-target="queueTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input id="queueTextStrokeWidth" class="metric-range" max="12" min="0" type="range"><input id="queueTextStrokeWidthValue" class="metric-number" max="12" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="queueTextOpacity" data-label="文字透明度"><span class="metric-label"><span>文字透明度</span></span><input id="queueTextOpacity" class="metric-range" max="100" min="0" type="range"><input id="queueTextOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-pair"><button type="button" class="text-color-quick" data-color-target="queueTextColor"><span class="color-swatch"></span><span>文字颜色</span></button><input id="queueTextColor" type="color" hidden><button type="button" class="text-color-quick" data-color-target="queueTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button><input id="queueTextStrokeColor" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="queueTextLineGap" data-label="文字行间距"><span class="metric-label"><span>文字行间距</span></span><input id="queueTextLineGap" class="metric-range" max="30" min="0" type="range"><input id="queueTextLineGapValue" class="metric-number" max="30" min="0" type="number"><span class="metric-unit">px</span></div>
+                </div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <div class="text-metric-quick" data-range-target="queueBackgroundOpacity" data-label="背景透明度"><span class="metric-label"><span>背景透明度</span></span><input id="queueBackgroundOpacity" class="metric-range" max="100" min="0" type="range"><input id="queueBackgroundOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-single"><button type="button" class="text-color-quick" data-color-target="queueBackground"><span class="color-swatch"></span><span>背景颜色</span></button><input id="queueBackground" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="queueAvatarSize" data-label="头像大小"><span class="metric-label"><span>头像大小</span></span><input id="queueAvatarSize" class="metric-range" max="96" min="12" type="range"><input id="queueAvatarSizeValue" class="metric-number" max="96" min="12" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="queueAvatarNameGap" data-label="头像文字间距"><span class="metric-label"><span>头像文字间距</span></span><input id="queueAvatarNameGap" class="metric-range" max="80" min="0" type="range"><input id="queueAvatarNameGapValue" class="metric-number" max="80" min="0" type="number"><span class="metric-unit">px</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="style-section collapsible-section area-style-section" data-collapsible data-collapse-key="text-area-info" data-default-open="false">
+              <div class="section-header"><h3>说明区域（右侧）</h3><button id="resetInfoAreaBtn" class="btn small ghost reset-group-btn">恢复默认</button></div>
+              <div class="section-body">
+                <label class="area-style-copy"><span>说明区域（右侧）显示文字</span><textarea id="infoStyleText" rows="3" placeholder="支持手动换行和自动换行"></textarea></label>
+                <div class="area-style-actions"><button type="button" class="btn primary area-apply-text">应用文字</button><button type="button" class="btn ghost area-discard-text">放弃修改并恢复</button></div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <label class="area-style-select"><span>字体</span><select class="font-select" id="infoFontFile"><option value="">默认字体</option></select></label>
+                  <label class="area-style-select"><span>文字对齐方式</span><select id="infoTextAlign"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select></label>
+                  <div class="text-metric-quick" data-range-target="infoFontSize" data-label="字号"><span class="metric-label"><span>字号</span></span><input id="infoFontSize" class="metric-range" max="60" min="10" type="range"><input id="infoFontSizeValue" class="metric-number" max="60" min="10" type="number"><span class="metric-unit">px</span></div>
+                  <label class="area-style-select"><span>字重</span><select id="infoFontWeight"><option value="400">常规 400</option><option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗体 700</option><option value="800">特粗 800</option></select></label>
+                  <div class="text-metric-quick" data-range-target="infoTextStrokeWidth" data-label="描边粗细"><span class="metric-label"><span>描边粗细</span></span><input id="infoTextStrokeWidth" class="metric-range" max="12" min="0" type="range"><input id="infoTextStrokeWidthValue" class="metric-number" max="12" min="0" type="number"><span class="metric-unit">px</span></div>
+                  <div class="text-metric-quick" data-range-target="infoTextOpacity" data-label="文字透明度"><span class="metric-label"><span>文字透明度</span></span><input id="infoTextOpacity" class="metric-range" max="100" min="0" type="range"><input id="infoTextOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-pair"><button type="button" class="text-color-quick" data-color-target="infoTextColor"><span class="color-swatch"></span><span>文字颜色</span></button><input id="infoTextColor" type="color" hidden><button type="button" class="text-color-quick" data-color-target="infoTextStrokeColor"><span class="color-swatch"></span><span>描边颜色</span></button><input id="infoTextStrokeColor" type="color" hidden></div>
+                  <div class="text-metric-quick" data-range-target="infoLineGap" data-label="文字行间距"><span class="metric-label"><span>文字行间距</span></span><input id="infoLineGap" class="metric-range" max="30" min="0" type="range"><input id="infoLineGapValue" class="metric-number" max="30" min="0" type="number"><span class="metric-unit">px</span></div>
+                </div>
+                <div class="area-style-divider"></div>
+                <div class="area-style-grid">
+                  <div class="text-metric-quick" data-range-target="infoBackgroundOpacity" data-label="背景透明度"><span class="metric-label"><span>背景透明度</span></span><input id="infoBackgroundOpacity" class="metric-range" max="100" min="0" type="range"><input id="infoBackgroundOpacityValue" class="metric-number" max="100" min="0" type="number"><span class="metric-unit">%</span></div>
+                  <div class="area-color-single"><button type="button" class="text-color-quick" data-color-target="infoBackground"><span class="color-swatch"></span><span>背景颜色</span></button><input id="infoBackground" type="color" hidden></div>
+                </div>
+              </div>
+            </section>
 
           </div>
         </article>
@@ -282,6 +366,7 @@
       <button id="refreshQrBtn" class="btn">刷新二维码</button>
     </div>
   </div>
+  <button id="backToTopBtn" class="back-to-top" type="button" aria-label="回到页面顶部" title="回到页面顶部">▲</button>
   <div id="toast" class="toast"></div>
   <script src="/assets/qrcode-bundle.js"></script>
   <script src="/assets/control.js"></script>

@@ -435,6 +435,12 @@ func TestOverlayAreaTextDefaults(t *testing.T) {
 	if o.QueueEmptyText != "空" {
 		t.Fatalf("unexpected queue empty text: %q", o.QueueEmptyText)
 	}
+	if o.CurrentTextAlign != "left" || o.QueueTextAlign != "left" || o.InfoTextAlign != "left" {
+		t.Fatalf("unexpected area text alignment defaults: %#v", o)
+	}
+	if o.CurrentTextLineGap != 0 || o.QueueTextLineGap != 0 {
+		t.Fatalf("unexpected empty text line gap defaults: %#v", o)
+	}
 	if o.GradientStart != 0 || o.GradientEnd != 100 || o.AvatarSize != 32 {
 		t.Fatalf("unexpected gradient/avatar defaults: %#v", o)
 	}

@@ -78,15 +78,6 @@ async function submitQueueOrder(ids) {
   try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
 }
 
-async function moveQueueUser(id, delta) {
-  const ids = state.queue.map(user => user.id);
-  const from = ids.indexOf(id);
-  const to = from + delta;
-  if (from < 0 || to < 0 || to >= ids.length) return;
-  [ids[from], ids[to]] = [ids[to], ids[from]];
-  await submitQueueOrder(ids);
-}
-
 function renderQueue() {
   const list = $('queueList');
   if (!state.queue.length) {
@@ -97,12 +88,9 @@ function renderQueue() {
     <div class="queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
       <span class="drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
       <div class="position">${String(index + 1).padStart(2, '0')}</div>
-      <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small>${giftHTML(user)}</div></div>
-      <div class="queue-actions">
-        <button class="btn small move-btn" data-move-up="${escapeHtml(user.id)}" ${index === 0 ? 'disabled' : ''} title="上移一位">↑</button>
-        <button class="btn small move-btn" data-move-down="${escapeHtml(user.id)}" ${index === state.queue.length - 1 ? 'disabled' : ''} title="下移一位">↓</button>
-        <button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button>
-      </div>
+      <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
+      ${giftHTML(user)}
+      <div class="queue-actions"><button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button></div>
     </div>`).join('');
 
   list.querySelectorAll('.queue-item').forEach(node => {
@@ -143,8 +131,6 @@ function renderQueue() {
       await submitQueueOrder(ids);
     });
   });
-  list.querySelectorAll('[data-move-up]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveUp, -1)));
-  list.querySelectorAll('[data-move-down]').forEach(btn => btn.addEventListener('click', () => moveQueueUser(btn.dataset.moveDown, 1)));
   list.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', async () => {
     try { await api('/api/queue/remove', {body:{id:btn.dataset.remove}}); } catch (err) { toast(err.message); }
   }));
@@ -158,8 +144,14 @@ async function init() {
   $('nextBtn').addEventListener('click', () => api('/api/queue/next').catch(err => toast(err.message)));
   $('skipBtn').addEventListener('click', () => api('/api/queue/skip').catch(err => toast(err.message)));
   $('pauseBtn').addEventListener('click', () => api('/api/queue/pause', {body:{paused:!state.paused}}).catch(err => toast(err.message)));
-  $('clearBtn').addEventListener('click', async () => { if (confirm('清空当前队列？')) await api('/api/queue/clear'); });
-  $('endBtn').addEventListener('click', async () => { if (confirm('结束本场并清空队列？')) await api('/api/session/end'); });
+  $('clearBtn').addEventListener('click', async () => {
+    if (!confirm('清空当前队列？')) return;
+    try { await api('/api/queue/clear'); } catch (err) { toast(err.message); }
+  });
+  $('endBtn').addEventListener('click', async () => {
+    if (!confirm('结束本场并清空队列？')) return;
+    try { await api('/api/session/end'); } catch (err) { toast(err.message); }
+  });
   $('manualBtn').addEventListener('click', async () => {
     const username = $('manualName').value.trim();
     if (!username) return;

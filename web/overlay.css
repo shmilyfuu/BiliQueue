@@ -104,11 +104,11 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
   display:flex;
   flex-direction:column;
   justify-content:center;
-  gap:var(--info-line-gap);
+  gap:4px;
   line-height:1.35;
   overflow:hidden;
 }
-.info-line { display:block; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; color:inherit; opacity:1; }
+.info-line { display:block; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; color:inherit; opacity:1; line-height:calc(1.35em + var(--info-line-gap, 0px)); }
 .viewport {
   width:var(--queue-width);
   min-width:0;
@@ -158,8 +158,11 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
 .current-label { grid-column:2; grid-row:1; display:block; opacity:1; font-size:.55em; line-height:1.2; margin-bottom:3px; font-weight:inherit; color:inherit; text-align:var(--current-text-align); }
 .current-name { grid-column:2; grid-row:2; display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-weight:inherit; text-align:var(--current-text-align); }
 .current-user.no-media .current-label,.current-user.no-media .current-name { grid-column:1; }
-.placeholder { width:100%; opacity:1; text-align:inherit; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.35; color:inherit; }
-.queue-empty { width:100%; display:block; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.35; color:inherit; font:inherit; }
+.placeholder { width:100%; opacity:1; text-align:inherit; white-space:pre-wrap; overflow-wrap:anywhere; line-height:calc(1.35em + var(--current-text-line-gap, 0px)); color:inherit; }
+.queue-empty { width:100%; display:block; text-align:var(--queue-empty-text-align, left); white-space:pre-wrap; overflow-wrap:anywhere; line-height:calc(1.35em + var(--queue-text-line-gap, 0px)); color:inherit; font:inherit; }
+.placeholder .stroke-block { line-height:calc(1.35em + var(--current-text-line-gap, 0px)); }
+.queue-empty .stroke-block { line-height:calc(1.35em + var(--queue-text-line-gap, 0px)); }
+.info-line .stroke-block { line-height:calc(1.35em + var(--info-line-gap, 0px)); }
 .track.short-left { width:100%; justify-content:flex-start; }
 .track.short-center { width:100%; justify-content:center; }
 .fixed-row .user-chip { overflow:hidden; }
@@ -673,12 +676,13 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
   display:flex;
   align-items:center;
   flex:none;
-  padding:0;
+  padding:0 28px;
   gap:0;
 }
 .continuous-grid {
   height:100%;
-  min-width:max-content;
+  width:max-content;
+  min-width:var(--queue-grid-width, 1px);
   display:grid;
   grid-auto-flow:column;
   grid-auto-columns:var(--queue-cell-width);
@@ -720,4 +724,64 @@ body { display:flex; align-items:center; justify-content:flex-start; font-family
 /* v0.1.12-test25 paged slide with fade */
 .slide-fade-pages > .page-copy {
   opacity:1;
+}
+
+/* v0.1.14 priority queue gift layout */
+.user-chip {
+  gap:0;
+}
+.chip-main {
+  position:relative;
+  z-index:0;
+  isolation:isolate;
+  display:flex;
+  align-items:center;
+  gap:var(--queue-avatar-name-gap);
+  width:100%;
+  max-width:100%;
+  min-width:0;
+}
+.user-chip .position {
+  min-width:2ch;
+  text-align:center;
+}
+.user-chip.priority {
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+}
+.priority-bg {
+  position:absolute;
+  top:calc(clamp(3px, .22em, 7px) * -1);
+  bottom:calc(clamp(3px, .22em, 7px) * -1);
+  left:var(--priority-bg-left, calc((var(--queue-avatar-name-gap) + 8px) * -1));
+  width:var(--priority-bg-width, 100%);
+  z-index:-1;
+  pointer-events:none;
+  border-radius:999px;
+  background:linear-gradient(90deg, rgba(243,215,149,.15) 0%, rgba(243,215,149,0) 80%);
+}
+.priority-bg::before {
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  padding:1px;
+  background:linear-gradient(90deg, rgba(243,215,149,.30) 0%, rgba(243,215,149,0) 60%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+}
+.queue-gift-mark {
+  width:var(--queue-avatar-size);
+  height:var(--queue-avatar-size);
+  border-radius:50%;
+  background:rgba(255,255,255,.18);
+  font-size:.62em;
+}
+.current-gift-mark {
+  width:1.45em;
+  height:1.45em;
 }
