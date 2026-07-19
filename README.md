@@ -44,7 +44,7 @@ BiliQueue-v0.1.15-windows.zip
 BiliQueue-windows-amd64.exe
 ```
 
-正常情况下不会出现黑色控制台窗口，也不会自动打开浏览器。启动后请在 Windows 右下角系统托盘区域找到 BiliQueue 图标，右键打开菜单。
+启动后请在 Windows 右下角系统托盘区域找到 BiliQueue 图标，右键打开菜单。
 
 简易控制窗口需要 Microsoft Edge WebView2 Runtime。若系统未安装，BiliQueue 会提供“下载 WebView2”“默认浏览器打开”和“取消”三种选择；下载按钮会打开微软的 WebView2 引导程序下载地址。
 
@@ -68,7 +68,7 @@ http://127.0.0.1:18303/control
 http://127.0.0.1:18303/overlay
 ```
 
-浏览器源的宽度和高度，请按照控制台顶部预览区域显示的建议值填写。
+浏览器源的宽度和高度，简易照控制台顶部预览区域显示的建议值填写。
 
 ## 基本使用
 
