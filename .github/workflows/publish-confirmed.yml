@@ -28,6 +28,10 @@ jobs:
         shell: bash
         run: |
           VERSION="$(cat VERSION)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing to publish non-release VERSION: $VERSION" >&2
+            exit 1
+          fi
           PACKAGE="BiliQueue-v${VERSION}-windows"
           SOURCE_PACKAGE="BiliQueue-v${VERSION}-source.zip"
           mkdir -p "dist/${PACKAGE}/data" "dist/${PACKAGE}/fonts" "dist/${PACKAGE}/assets"

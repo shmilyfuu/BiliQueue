@@ -6,33 +6,46 @@
   <title>BiliQueue 简易控制页</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body>
+<body class="mini-page">
   <main class="app-shell mini-shell">
-    <header class="topbar">
+    <header class="mini-topbar">
       <div class="brand"><h1>BiliQueue</h1><p>简易控制页 · 队列管理</p></div>
-      <div id="miniStatus" class="status-pill disconnected"><span class="status-dot"></span><span id="miniStatusText">未连接</span></div>
+      <div class="mini-window-actions">
+        <button id="topmostBtn" type="button" class="btn small ghost hidden">置顶</button>
+        <div id="miniStatus" class="status-pill disconnected"><span class="status-dot"></span><span id="miniStatusText">未连接</span></div>
+      </div>
     </header>
 
     <article class="card mini-queue-card">
       <div class="card-header"><h2>队列管理</h2><span id="queueCount">0 人</span></div>
       <div class="card-body">
-        <div id="currentCard" class="current-card"></div>
-        <div class="toolbar">
+        <div id="currentCard" class="mini-current-card"></div>
+        <div class="mini-toolbar">
           <button id="nextBtn" class="btn primary">下一位</button>
           <button id="skipBtn" class="btn">移到队尾</button>
           <button id="pauseBtn" class="btn">暂停排队</button>
           <button id="clearBtn" class="btn danger">清空队列</button>
-          <button id="endBtn" class="btn ghost">结束本场</button>
         </div>
-        <div class="row" style="margin-bottom:14px">
+        <div class="mini-manual-row">
           <input id="manualName" class="room-input" placeholder="手动添加用户名">
           <button id="manualBtn" class="btn">添加</button>
         </div>
-        <div id="queueList" class="queue-list"></div>
+        <div id="queueList" class="mini-queue-list"></div>
       </div>
     </article>
   </main>
+  <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+    <div class="modal-card confirm-modal-card">
+      <div class="modal-head"><h2 id="confirmTitle">确认操作</h2><button id="confirmCloseBtn" type="button" class="btn small ghost">关闭</button></div>
+      <p id="confirmMessage"></p>
+      <div class="confirm-modal-actions">
+        <button id="confirmCancelBtn" type="button" class="btn ghost">取消</button>
+        <button id="confirmAcceptBtn" type="button" class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
+  <script src="/assets/dialog.js"></script>
   <script src="/assets/mini-control.js"></script>
 </body>
 </html>

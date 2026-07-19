@@ -88,6 +88,34 @@
             <div id="lastGift" class="log-box gift-log">尚未收到礼物</div>
           </div>
         </article>
+
+        <article class="card collapsible-card hotkey-card" data-collapsible data-default-open="true" style="margin-top:18px">
+          <div class="card-header"><h2>快捷键</h2></div>
+          <div class="card-body">
+            <div class="hotkey-list">
+              <div class="hotkey-row" data-hotkey-row="openControl">
+                <div class="hotkey-copy"><strong>打开控制台网页</strong><small data-hotkey-status="openControl">未设置</small></div>
+                <kbd data-hotkey-value="openControl">未设置</kbd>
+                <button type="button" class="btn hotkey-record-btn" data-hotkey-record="openControl">录制快捷键</button>
+              </div>
+              <div class="hotkey-row" data-hotkey-row="openMiniControl">
+                <div class="hotkey-copy"><strong>打开简易控制页</strong><small data-hotkey-status="openMiniControl">未设置</small></div>
+                <kbd data-hotkey-value="openMiniControl">未设置</kbd>
+                <button type="button" class="btn hotkey-record-btn" data-hotkey-record="openMiniControl">录制快捷键</button>
+              </div>
+              <div class="hotkey-row" data-hotkey-row="nextQueue">
+                <div class="hotkey-copy"><strong>下一位</strong><small data-hotkey-status="nextQueue">未设置</small></div>
+                <kbd data-hotkey-value="nextQueue">未设置</kbd>
+                <button type="button" class="btn hotkey-record-btn" data-hotkey-record="nextQueue">录制快捷键</button>
+              </div>
+              <div class="hotkey-row" data-hotkey-row="clearQueue">
+                <div class="hotkey-copy"><strong>清空队列</strong><small data-hotkey-status="clearQueue">未设置</small></div>
+                <kbd data-hotkey-value="clearQueue">未设置</kbd>
+                <button type="button" class="btn hotkey-record-btn" data-hotkey-record="clearQueue">录制快捷键</button>
+              </div>
+            </div>
+          </div>
+        </article>
       </section>
 
       <section>
@@ -366,9 +394,20 @@
       <button id="refreshQrBtn" class="btn">刷新二维码</button>
     </div>
   </div>
+  <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+    <div class="modal-card confirm-modal-card">
+      <div class="modal-head"><h2 id="confirmTitle">确认操作</h2><button id="confirmCloseBtn" type="button" class="btn small ghost">关闭</button></div>
+      <p id="confirmMessage"></p>
+      <div class="confirm-modal-actions">
+        <button id="confirmCancelBtn" type="button" class="btn ghost">取消</button>
+        <button id="confirmAcceptBtn" type="button" class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
   <button id="backToTopBtn" class="back-to-top" type="button" aria-label="回到页面顶部" title="回到页面顶部">▲</button>
   <div id="toast" class="toast"></div>
   <script src="/assets/qrcode-bundle.js"></script>
+  <script src="/assets/dialog.js"></script>
   <script src="/assets/control.js"></script>
 </body>
 </html>

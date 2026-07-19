@@ -2,4 +2,4 @@
 
 package main
 
-func acquireSingleInstance() (func(), bool) { return nil, false }
+func acquireSingleInstance(instanceID string) (func(), bool) { return nil, false }

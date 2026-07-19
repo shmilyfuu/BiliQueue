@@ -103,7 +103,7 @@ func (a *App) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	a.saveConfig()
 	a.saveQueue()
-	a.broadcast()
+	a.applyHotkeys(cfg.Hotkeys)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"backupFile": filepath.Base(backupPath),

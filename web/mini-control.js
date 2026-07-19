@@ -2,6 +2,7 @@
 
 let state = null;
 let dragId = null;
+let nativeWindowState = null;
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 
@@ -12,8 +13,22 @@ async function api(path, options = {}) {
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = new Error(data.error || `HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
   return data;
+}
+
+function renderNativeWindowState(next) {
+  nativeWindowState = next;
+  const button = $('topmostBtn');
+  const available = Boolean(next?.supported && next?.active);
+  button.classList.toggle('hidden', !available);
+  button.classList.toggle('is-active', Boolean(next?.topmost));
+  button.textContent = next?.topmost ? '取消置顶' : '置顶';
+  button.setAttribute('aria-pressed', next?.topmost ? 'true' : 'false');
 }
 
 function toast(message) {
@@ -42,9 +57,8 @@ function avatarHTML(user) {
 
 function giftHTML(user) {
   if (!user?.priority) return '';
-  const icon = user.giftIcon ? `<span class="gift-icon">◆<img src="${escapeHtml(mediaImageURL(user.giftIcon))}" alt="" onerror="this.remove()"></span>` : '<span>◆</span>';
   const amount = Number(user.giftBattery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
-  return `<span class="gift-badge" title="${escapeHtml(user.giftName || '礼物')} · ${amount}电池">${icon}<b>${escapeHtml(user.giftName || '礼物')}</b><em>${amount}电池</em></span>`;
+  return `<span class="mini-gift-battery" title="${escapeHtml(user.giftName || '礼物')}">${amount}电池</span>`;
 }
 
 function render(next) {
@@ -63,15 +77,16 @@ function render(next) {
 
 function renderCurrent() {
   const user = state.queue[0];
+  $('currentCard').classList.toggle('is-empty', !user);
   if (!user) {
-    $('currentCard').innerHTML = `<div class="current-copy"><small>当前用户</small><strong>${escapeHtml(state.config.overlay.emptyText || '排队空闲中')}</strong></div>`;
+    $('currentCard').innerHTML = `<div class="mini-current-copy"><small>当前用户</small><strong>${escapeHtml(state.config.overlay.emptyText || '排队空闲中')}</strong></div>`;
     return;
   }
-  $('currentCard').innerHTML = `${avatarHTML(user)}<div class="current-copy"><small>当前用户 · 第 1 位</small><strong>${escapeHtml(user.username)}</strong>${giftHTML(user)}</div>`;
+  $('currentCard').innerHTML = `${avatarHTML(user)}<div class="mini-current-copy"><small>当前用户 · 第 1 位</small><strong>${escapeHtml(user.username)}</strong></div>${giftHTML(user)}`;
 }
 
 function clearDropIndicators() {
-  document.querySelectorAll('.queue-item.drop-before,.queue-item.drop-after').forEach(node => node.classList.remove('drop-before','drop-after'));
+  document.querySelectorAll('.mini-queue-item.drop-before,.mini-queue-item.drop-after').forEach(node => node.classList.remove('drop-before','drop-after'));
 }
 
 async function submitQueueOrder(ids) {
@@ -81,19 +96,19 @@ async function submitQueueOrder(ids) {
 function renderQueue() {
   const list = $('queueList');
   if (!state.queue.length) {
-    list.innerHTML = '<div class="empty">当前没有排队用户</div>';
+    list.innerHTML = '<div class="mini-empty">当前没有排队用户</div>';
     return;
   }
   list.innerHTML = state.queue.map((user, index) => `
-    <div class="queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
-      <span class="drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
-      <div class="position">${String(index + 1).padStart(2, '0')}</div>
-      <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
+    <div class="mini-queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
+      <span class="mini-drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
+      <div class="mini-position">${String(index + 1).padStart(2, '0')}</div>
+      <div class="mini-queue-user">${avatarHTML(user)}<div class="mini-queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
       ${giftHTML(user)}
-      <div class="queue-actions"><button class="btn small danger" data-remove="${escapeHtml(user.id)}">移除</button></div>
+      <button class="btn danger mini-remove-btn" data-remove="${escapeHtml(user.id)}">移除</button>
     </div>`).join('');
 
-  list.querySelectorAll('.queue-item').forEach(node => {
+  list.querySelectorAll('.mini-queue-item').forEach(node => {
     node.addEventListener('dragstart', event => {
       dragId = node.dataset.id;
       node.classList.add('dragging');
@@ -137,7 +152,12 @@ function renderQueue() {
 }
 
 async function init() {
-  render(await fetch('/api/state').then(r => r.json()));
+  const [initialState, initialWindowState] = await Promise.all([
+    fetch('/api/state').then(r => r.json()),
+    fetch('/api/window/mini-control').then(r => r.json()),
+  ]);
+  render(initialState);
+  renderNativeWindowState(initialWindowState);
   const source = new EventSource('/events');
   source.onmessage = event => render(JSON.parse(event.data));
   source.onerror = () => toast('简易控制页与本机服务的事件流已中断，浏览器会自动尝试恢复');
@@ -145,12 +165,8 @@ async function init() {
   $('skipBtn').addEventListener('click', () => api('/api/queue/skip').catch(err => toast(err.message)));
   $('pauseBtn').addEventListener('click', () => api('/api/queue/pause', {body:{paused:!state.paused}}).catch(err => toast(err.message)));
   $('clearBtn').addEventListener('click', async () => {
-    if (!confirm('清空当前队列？')) return;
+    if (!await showAppConfirm({title:'清空队列', message:'确定清空当前队列吗？此操作无法撤销。', confirmText:'清空队列', danger:true})) return;
     try { await api('/api/queue/clear'); } catch (err) { toast(err.message); }
-  });
-  $('endBtn').addEventListener('click', async () => {
-    if (!confirm('结束本场并清空队列？')) return;
-    try { await api('/api/session/end'); } catch (err) { toast(err.message); }
   });
   $('manualBtn').addEventListener('click', async () => {
     const username = $('manualName').value.trim();
@@ -158,6 +174,24 @@ async function init() {
     try { await api('/api/queue/manual', {body:{username}}); $('manualName').value = ''; } catch (err) { toast(err.message); }
   });
   $('manualName').addEventListener('keydown', event => { if (event.key === 'Enter') $('manualBtn').click(); });
+  $('topmostBtn').addEventListener('click', async () => {
+    try {
+      const next = await api('/api/window/mini-control/topmost', {body:{topmost:!nativeWindowState?.topmost}});
+      renderNativeWindowState(next);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
 }
 
-init().catch(err => toast(err.message));
+function notifyNativeWindowReady() {
+  const notify = window.__biliqueueMiniReady;
+  if (typeof notify !== 'function') return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    Promise.resolve(notify()).catch(() => {});
+  }));
+}
+
+init()
+  .catch(err => toast(err.message))
+  .finally(notifyNativeWindowReady);

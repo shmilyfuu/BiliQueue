@@ -117,6 +117,13 @@ type GiftPriorityConfig struct {
 	SortByValue      bool    `json:"sortByValue"`
 }
 
+type HotkeyConfig struct {
+	OpenControl     string `json:"openControl"`
+	OpenMiniControl string `json:"openMiniControl"`
+	NextQueue       string `json:"nextQueue"`
+	ClearQueue      string `json:"clearQueue"`
+}
+
 type Config struct {
 	SchemaVersion int                `json:"schemaVersion"`
 	ListenAddress string             `json:"listenAddress"`
@@ -128,6 +135,7 @@ type Config struct {
 	NextCommand   string             `json:"nextCommand"`
 	MaxQueue      int                `json:"maxQueue"`
 	GiftPriority  GiftPriorityConfig `json:"giftPriority"`
+	Hotkeys       HotkeyConfig       `json:"hotkeys"`
 	Overlay       OverlayStyle       `json:"overlay"`
 }
 
@@ -147,25 +155,26 @@ type QueueUser struct {
 }
 
 type PublicState struct {
-	Config           Config       `json:"config"`
-	LoginStatus      string       `json:"loginStatus"`
-	LoginDetail      string       `json:"loginDetail"`
-	LoginUID         int64        `json:"loginUid,omitempty"`
-	LoginName        string       `json:"loginName,omitempty"`
-	Queue            []QueueUser  `json:"queue"`
-	Paused           bool         `json:"paused"`
-	ConnectionStatus string       `json:"connectionStatus"`
-	ConnectionDetail string       `json:"connectionDetail"`
-	ResolvedRoomID   int64        `json:"resolvedRoomId,omitempty"`
-	RoomTitle        string       `json:"roomTitle,omitempty"`
-	AnchorName       string       `json:"anchorName,omitempty"`
-	AnchorUID        int64        `json:"anchorUid,omitempty"`
-	ControlURL       string       `json:"controlUrl,omitempty"`
-	OverlayURL       string       `json:"overlayUrl,omitempty"`
-	MiniControlURL   string       `json:"miniControlUrl,omitempty"`
-	LastMessage      *ChatMessage `json:"lastMessage,omitempty"`
-	LastGift         *GiftMessage `json:"lastGift,omitempty"`
-	Version          string       `json:"version"`
+	Config           Config            `json:"config"`
+	LoginStatus      string            `json:"loginStatus"`
+	LoginDetail      string            `json:"loginDetail"`
+	LoginUID         int64             `json:"loginUid,omitempty"`
+	LoginName        string            `json:"loginName,omitempty"`
+	Queue            []QueueUser       `json:"queue"`
+	Paused           bool              `json:"paused"`
+	ConnectionStatus string            `json:"connectionStatus"`
+	ConnectionDetail string            `json:"connectionDetail"`
+	ResolvedRoomID   int64             `json:"resolvedRoomId,omitempty"`
+	RoomTitle        string            `json:"roomTitle,omitempty"`
+	AnchorName       string            `json:"anchorName,omitempty"`
+	AnchorUID        int64             `json:"anchorUid,omitempty"`
+	ControlURL       string            `json:"controlUrl,omitempty"`
+	OverlayURL       string            `json:"overlayUrl,omitempty"`
+	MiniControlURL   string            `json:"miniControlUrl,omitempty"`
+	HotkeyStatus     map[string]string `json:"hotkeyStatus,omitempty"`
+	LastMessage      *ChatMessage      `json:"lastMessage,omitempty"`
+	LastGift         *GiftMessage      `json:"lastGift,omitempty"`
+	Version          string            `json:"version"`
 }
 
 type queueSnapshot struct {
@@ -193,6 +202,7 @@ type App struct {
 	lastMessage      *ChatMessage
 	lastGift         *GiftMessage
 	giftEvents       map[string]int64
+	hotkeyStatus     map[string]string
 
 	dataDir  string
 	fontsDir string
@@ -203,11 +213,14 @@ type App struct {
 	messageSeq           atomic.Uint64
 }
 
-const version = "0.1.14"
+const version = "0.1.15"
+
+// buildProfile is set only for local-purpose builds through -ldflags -X.
+var buildProfile string
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 12,
+		SchemaVersion: 13,
 		ListenAddress: "127.0.0.1:18303",
 		RoomID:        "",
 		QueueEnabled:  true,
@@ -217,6 +230,7 @@ func defaultConfig() Config {
 		NextCommand:   "下一位",
 		MaxQueue:      100,
 		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
+		Hotkeys:       HotkeyConfig{},
 		Overlay: OverlayStyle{
 			Height:                   50,
 			FontSize:                 24,
@@ -320,6 +334,7 @@ func newAppWithFonts(dataDir, fontsOverride string) *App {
 		fontsDir:         fontsDir,
 		clients:          make(map[chan []byte]struct{}),
 		giftEvents:       make(map[string]int64),
+		hotkeyStatus:     defaultHotkeyStatus("托盘尚未启动"),
 	}
 	_ = os.MkdirAll(dataDir, 0o755)
 	_ = os.MkdirAll(a.fontsDir, 0o755)
@@ -359,6 +374,7 @@ func (a *App) stateLocked() PublicState {
 		ControlURL:       a.controlURL(),
 		OverlayURL:       a.overlayURL(),
 		MiniControlURL:   a.miniControlURL(),
+		HotkeyStatus:     cloneStringMap(a.hotkeyStatus),
 		LastMessage:      msg,
 		LastGift:         gift,
 		Version:          version,
@@ -390,6 +406,36 @@ func (a *App) state() PublicState {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.stateLocked()
+}
+
+func defaultHotkeyStatus(message string) map[string]string {
+	return map[string]string{
+		"openControl":     message,
+		"openMiniControl": message,
+		"nextQueue":       message,
+		"clearQueue":      message,
+	}
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func (a *App) setHotkeyStatus(status map[string]string) {
+	a.mu.Lock()
+	a.hotkeyStatus = cloneStringMap(status)
+	a.mu.Unlock()
+}
+
+func (a *App) applyHotkeys(cfg HotkeyConfig) map[string]string {
+	status := reloadGlobalHotkeys(cfg)
+	a.setHotkeyStatus(status)
+	a.broadcast()
+	return status
 }
 
 func (a *App) broadcast() {
@@ -1312,11 +1358,70 @@ func (a *App) routes() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, a.state())
 	})
+	mux.HandleFunc("/api/window/mini-control", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, miniControlWindowState())
+	})
+	mux.HandleFunc("/api/window/mini-control/open", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := openMiniControlWindow(a); err != nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, miniControlWindowState())
+	})
+	mux.HandleFunc("/api/window/mini-control/topmost", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Topmost bool `json:"topmost"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		state, err := setMiniControlWindowTopmost(a, req.Topmost)
+		if err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, state)
+	})
 
 	mux.HandleFunc("/events", a.handleEvents)
 	mux.HandleFunc("/api/media/image", a.handleMediaImage)
 	mux.HandleFunc("/api/config/export", a.handleConfigExport)
 	mux.HandleFunc("/api/config/import", a.handleConfigImport)
+	mux.HandleFunc("/api/hotkeys", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var hotkeys HotkeyConfig
+		if err := decodeJSON(r, &hotkeys); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		hotkeys.OpenControl = strings.TrimSpace(hotkeys.OpenControl)
+		hotkeys.OpenMiniControl = strings.TrimSpace(hotkeys.OpenMiniControl)
+		hotkeys.NextQueue = strings.TrimSpace(hotkeys.NextQueue)
+		hotkeys.ClearQueue = strings.TrimSpace(hotkeys.ClearQueue)
+		a.mu.Lock()
+		a.config.Hotkeys = hotkeys
+		a.config.SchemaVersion = defaultConfig().SchemaVersion
+		a.mu.Unlock()
+		a.saveConfig()
+		a.applyHotkeys(hotkeys)
+		writeJSON(w, http.StatusOK, a.state())
+	})
 	mux.HandleFunc("/api/server/listen", a.handleServerListen)
 
 	mux.HandleFunc("/api/auth/qrcode/start", func(w http.ResponseWriter, r *http.Request) {
@@ -1395,11 +1500,16 @@ func (a *App) routes() http.Handler {
 		applyConfigDefaults(&cfg)
 		a.mu.Lock()
 		oldRoom := a.config.RoomID
+		oldHotkeys := a.config.Hotkeys
 		a.config = cfg
 		a.normalizePriorityZoneLocked()
 		a.mu.Unlock()
 		a.saveConfig()
-		a.broadcast()
+		if oldHotkeys != cfg.Hotkeys {
+			a.applyHotkeys(cfg.Hotkeys)
+		} else {
+			a.broadcast()
+		}
 		if cfg.RoomID != "" && oldRoom != cfg.RoomID {
 			_ = a.connect(cfg.RoomID)
 		}
@@ -1799,6 +1909,7 @@ func (sc *ServerController) ChangeListenAddress(addr string) (PublicState, error
 			log.Printf("server changed listener failed: %v", err)
 		}
 	}()
+	refreshMiniControlWindow(sc.app)
 	if oldServer != nil {
 		go func() {
 			time.Sleep(650 * time.Millisecond)
@@ -1889,15 +2000,26 @@ func listenPort(addr string) string {
 
 func main() {
 	defaultDataDir := "data"
+	defaultFontsDir := ""
+	defaultListen := ""
+	defaultInstanceID := ""
 	if executable, err := os.Executable(); err == nil {
-		defaultDataDir = filepath.Join(filepath.Dir(executable), "data")
+		executableDir := filepath.Dir(executable)
+		defaultDataDir = filepath.Join(executableDir, "data")
+		if buildProfile == "isolated-test" {
+			defaultDataDir = filepath.Join(executableDir, "test-data")
+			defaultFontsDir = filepath.Join(executableDir, "test-fonts")
+			defaultListen = "127.0.0.1:18313"
+			defaultInstanceID = "v" + version + "-isolated-test"
+		}
 	}
-	listenFlag := flag.String("listen", "", "HTTP listen address")
+	listenFlag := flag.String("listen", defaultListen, "HTTP listen address")
 	dataDir := flag.String("data", defaultDataDir, "data directory")
-	fontsDir := flag.String("fonts", "", "fonts directory; defaults to sibling fonts directory for normal data dirs")
+	fontsDir := flag.String("fonts", defaultFontsDir, "fonts directory; defaults to sibling fonts directory for normal data dirs")
 	openBrowserOnStart := flag.Bool("open-browser", false, "open the control page on startup")
 	noBrowser := flag.Bool("no-browser", false, "do not open the control page; kept for compatibility")
 	noTray := flag.Bool("no-tray", false, "disable the Windows system tray menu")
+	instanceID := flag.String("instance-id", defaultInstanceID, "single-instance namespace; use a unique value for isolated test runs")
 	flag.Parse()
 
 	logFile := setupLogging(*dataDir)
@@ -1907,7 +2029,7 @@ func main() {
 
 	app := newAppWithFonts(*dataDir, *fontsDir)
 	listen := chooseStartupListenAddress(app, *listenFlag)
-	if release, already := acquireSingleInstance(); already {
+	if release, already := acquireSingleInstance(*instanceID); already {
 		log.Printf("another instance is already running")
 		showInfoDialog("啊哦！", "已有 BiliQueue 正在运行！")
 		if release != nil {
@@ -1969,5 +2091,9 @@ func main() {
 		return
 	}
 
+	app.mu.RLock()
+	hotkeys := app.config.Hotkeys
+	app.mu.RUnlock()
+	app.applyHotkeys(hotkeys)
 	select {}
 }

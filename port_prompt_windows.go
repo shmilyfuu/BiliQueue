@@ -26,6 +26,7 @@ const (
 	ssNotify          = 0x00000100
 	colorBtnFace      = 15
 	idiInformation    = 32516
+	idiQuestion       = 32514
 	wmSetFont         = 0x0030
 	stmSetIcon        = 0x0170
 	defaultGuiFont    = 17
@@ -276,12 +277,26 @@ func promptClose(hwnd uintptr) {
 }
 
 func closeActivePrompt() {
+	closeWebView2MissingDialog()
+
 	promptMu.Lock()
 	d := activePrompt
 	if d != nil && d.hwnd != 0 && !d.done {
 		procPostMessageW.Call(d.hwnd, wmClose, 0, 0)
 	}
 	promptMu.Unlock()
+
+	confirmMu.Lock()
+	if activeConfirm != nil && activeConfirm.hwnd != 0 && !activeConfirm.done {
+		procPostMessageW.Call(activeConfirm.hwnd, wmClose, 0, 0)
+	}
+	confirmMu.Unlock()
+
+	infoMu.Lock()
+	if activeInfo != nil && activeInfo.hwnd != 0 && !activeInfo.done {
+		procPostMessageW.Call(activeInfo.hwnd, wmClose, 0, 0)
+	}
+	infoMu.Unlock()
 }
 
 func readWindowText(hwnd uintptr) string {
@@ -289,6 +304,159 @@ func readWindowText(hwnd uintptr) string {
 	buf := make([]uint16, int(length)+2)
 	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	return syscall.UTF16ToString(buf)
+}
+
+type confirmDialog struct {
+	hwnd   uintptr
+	done   bool
+	ok     bool
+	closed chan struct{}
+}
+
+var (
+	confirmMu     sync.Mutex
+	activeConfirm *confirmDialog
+)
+
+func showStyledConfirmDialog(title, message string) bool {
+	confirmMu.Lock()
+	if activeConfirm != nil && !activeConfirm.done {
+		if activeConfirm.hwnd != 0 {
+			procShowWindow.Call(activeConfirm.hwnd, swShow)
+			procSetForegroundWnd.Call(activeConfirm.hwnd)
+		}
+		confirmMu.Unlock()
+		return false
+	}
+	d := &confirmDialog{closed: make(chan struct{})}
+	activeConfirm = d
+	confirmMu.Unlock()
+	defer func() {
+		confirmMu.Lock()
+		if activeConfirm == d {
+			activeConfirm = nil
+		}
+		confirmMu.Unlock()
+	}()
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	className, _ := syscall.UTF16PtrFromString("BiliQueueConfirmDialogWindow")
+	windowName, _ := syscall.UTF16PtrFromString(title)
+	hInstance, _, _ := procPromptGetModuleHandle.Call(0)
+	wc := wndClassEx{
+		cbSize: uint32(unsafe.Sizeof(wndClassEx{})), lpfnWndProc: syscall.NewCallback(confirmDialogWndProc),
+		hInstance: hInstance, hbrBackground: uintptr(colorBtnFace + 1), lpszClassName: className,
+	}
+	if r, _, err := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); r == 0 && err != syscall.Errno(1410) {
+		return false
+	}
+
+	width := int32(460)
+	height := int32(184)
+	screenW, _, _ := procGetSystemMetrics.Call(0)
+	screenH, _, _ := procGetSystemMetrics.Call(1)
+	x := int32((int(screenW) - int(width)) / 2)
+	y := int32((int(screenH) - int(height)) / 2)
+	if x < 0 {
+		x = 60
+	}
+	if y < 0 {
+		y = 60
+	}
+	hwnd, _, _ := procCreateWindowExW.Call(
+		wsExDlgModalFrame, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(windowName)),
+		wsCaption|wsSysMenu|wsVisible, uintptr(x), uintptr(y), uintptr(width), uintptr(height),
+		0, 0, hInstance, 0,
+	)
+	if hwnd == 0 {
+		return false
+	}
+	d.hwnd = hwnd
+	createConfirmChildren(hwnd, hInstance, message)
+	procShowWindow.Call(hwnd, swShow)
+	procUpdateWindow.Call(hwnd)
+	procSetForegroundWnd.Call(hwnd)
+
+	var m msg
+	for {
+		select {
+		case <-d.closed:
+			return d.ok
+		default:
+		}
+		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
+		if int32(r) == -1 || r == 0 {
+			return false
+		}
+		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
+		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
+	}
+}
+
+func createConfirmChildren(hwnd, hInstance uintptr, message string) {
+	staticClass, _ := syscall.UTF16PtrFromString("STATIC")
+	buttonClass, _ := syscall.UTF16PtrFromString("BUTTON")
+	msg, _ := syscall.UTF16PtrFromString(message)
+	okText, _ := syscall.UTF16PtrFromString("确定")
+	cancelText, _ := syscall.UTF16PtrFromString("取消")
+	font, _, _ := procGetStockObject.Call(defaultGuiFont)
+
+	iconCtl, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), 0, wsChild|wsVisible|ssIcon,
+		24, 26, 36, 36, hwnd, 0, hInstance, 0)
+	if iconCtl != 0 {
+		hIcon, _, _ := procLoadIconW.Call(0, uintptr(idiQuestion))
+		procPromptSendMessageW.Call(iconCtl, stmSetIcon, hIcon, 0)
+	}
+	msgCtl, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(msg)), wsChild|wsVisible|ssLeft,
+		72, 28, 360, 42, hwnd, 0, hInstance, 0)
+	okBtn, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(buttonClass)), uintptr(unsafe.Pointer(okText)), wsChild|wsVisible|wsTabStop|bsDefPushButton,
+		250, 106, 84, 30, hwnd, promptIDOK, hInstance, 0)
+	cancelBtn, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(buttonClass)), uintptr(unsafe.Pointer(cancelText)), wsChild|wsVisible|wsTabStop,
+		348, 106, 84, 30, hwnd, promptIDCancel, hInstance, 0)
+	for _, ctl := range []uintptr{msgCtl, okBtn, cancelBtn} {
+		if ctl != 0 && font != 0 {
+			procPromptSendMessageW.Call(ctl, wmSetFont, font, 1)
+		}
+	}
+}
+
+func confirmDialogWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	switch message {
+	case wmCommand:
+		id := uint16(wParam & 0xffff)
+		if id == promptIDOK || id == promptIDCancel {
+			confirmFinish(hwnd, id == promptIDOK)
+			return 0
+		}
+	case wmClose:
+		confirmFinish(hwnd, false)
+		return 0
+	case wmDestroy:
+		confirmClose(hwnd)
+		return 0
+	}
+	r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
+	return r
+}
+
+func confirmFinish(hwnd uintptr, ok bool) {
+	confirmMu.Lock()
+	if activeConfirm != nil && activeConfirm.hwnd == hwnd {
+		activeConfirm.ok = ok
+	}
+	confirmMu.Unlock()
+	procDestroyWindow.Call(hwnd)
+}
+
+func confirmClose(hwnd uintptr) {
+	confirmMu.Lock()
+	if activeConfirm != nil && activeConfirm.hwnd == hwnd && !activeConfirm.done {
+		activeConfirm.done = true
+		close(activeConfirm.closed)
+	}
+	confirmMu.Unlock()
 }
 
 type infoDialog struct {

@@ -116,12 +116,12 @@ function chip(user, index, settings) {
   return `<div class="${classes}"><span class="chip-main">${priorityBg}${content}</span></div>`;
 }
 
-function stopScroll(preserveOffset = false) {
+function stopScroll(preserveOffset = false, preservePage = false) {
   if (pageTimer) clearInterval(pageTimer);
   if (pageResetTimer) clearTimeout(pageResetTimer);
   pageTimer = null;
   pageResetTimer = null;
-  pageIndex = 0;
+  if (!preservePage) pageIndex = 0;
   if (!preserveOffset) offset = 0;
   cycleWidth = 0;
   scrolling = false;
@@ -271,7 +271,11 @@ function renderQueueArea() {
   const preserveContinuousOffset = o.scrollMode === 'continuous'
     && activeTrack === targetTrack
     && activeTrack?.classList.contains('continuous-track');
-  stopScroll(preserveContinuousOffset);
+  const preservePagedPosition = activeTrack === targetTrack && (
+    (o.scrollMode === 'paged' && activeTrack?.classList.contains('vertical-pages'))
+    || (o.scrollMode === 'fade' && activeTrack?.classList.contains('fade-stack'))
+  );
+  stopScroll(preserveContinuousOffset, preservePagedPosition);
   const token = ++renderToken;
   $('singleRow').style.display = isDouble ? 'none' : 'flex';
   $('doubleRows').style.display = isDouble ? 'flex' : 'none';
@@ -303,7 +307,6 @@ function renderDoubleRows(waiting, settings, pageSize, token) {
   fixedRow?.classList.remove('page-mask', 'double-page-mask');
   scrollRow?.classList.remove('page-mask', 'double-page-mask');
   scrollTrack.style.transition = 'none';
-  scrollTrack.style.transform = 'translate3d(0,0,0)';
   scrollTrack.style.opacity = '1';
   const pages = buildAlignedPages(fixedRow, waiting, 2, settings, pageSize);
   fixedRow.innerHTML = pages[0] || '';
@@ -508,12 +511,12 @@ function setupVerticalPages(track, pages, settings) {
   if (pageResetTimer) clearTimeout(pageResetTimer);
   pageTimer = null;
   pageResetTimer = null;
-  pageIndex = 0;
   track.style.transition = 'none';
-  track.style.transform = 'translate3d(0,0,0)';
   if (pages.length <= 1) {
+    pageIndex = 0;
     pageMaskRow?.classList.remove('page-mask', 'double-page-mask');
     track.className = 'track page-stack';
+    track.style.transform = 'translate3d(0,0,0)';
     track.innerHTML = pages[0] || '';
     scheduleManualEllipsis();
     return;
@@ -523,10 +526,12 @@ function setupVerticalPages(track, pages, settings) {
   const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
   const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
   const loopPages = pages.concat(pages[0]);
+  pageIndex = Math.max(0, Math.min(pageIndex, pages.length - 1));
   track.className = 'track page-stack vertical-pages slide-fade-pages';
   track.innerHTML = loopPages.join('');
   track.querySelectorAll('.page-copy').forEach(page => { page.style.transitionDuration = `${duration}s`; });
-  setVerticalPageActive(track, 0);
+  setVerticalPageActive(track, pageIndex);
+  track.style.transform = `translate3d(0, ${-pageIndex * 100}%, 0)`;
   scheduleManualEllipsis();
   pageTimer = setInterval(() => {
     if (pageResetTimer) {
@@ -566,10 +571,10 @@ function setupFadePages(track, pages, settings) {
   track.parentElement?.classList.remove('page-mask', 'double-page-mask');
   if (pageTimer) clearInterval(pageTimer);
   pageTimer = null;
-  pageIndex = 0;
   track.style.transition = 'none';
   track.style.transform = 'translate3d(0,0,0)';
   if (pages.length <= 1) {
+    pageIndex = 0;
     track.className = 'track page-stack';
     track.innerHTML = pages[0] || '';
     scheduleManualEllipsis();
@@ -577,8 +582,9 @@ function setupFadePages(track, pages, settings) {
   }
   const duration = Math.max(0.1, Number(settings.effectDuration || 0.42));
   const interval = Math.max(duration + 0.1, Number(settings.effectInterval || 4));
+  pageIndex = Math.max(0, Math.min(pageIndex, pages.length - 1));
   track.className = 'track fade-stack';
-  track.innerHTML = pages.map((page, index) => `<div class="fade-page${index === 0 ? ' active' : ''}">${page}</div>`).join('');
+  track.innerHTML = pages.map((page, index) => `<div class="fade-page${index === pageIndex ? ' active' : ''}">${page}</div>`).join('');
   scheduleManualEllipsis();
   track.querySelectorAll('.fade-page').forEach(page => { page.style.transitionDuration = `${duration}s`; });
   pageTimer = setInterval(() => {

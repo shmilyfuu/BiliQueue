@@ -9,23 +9,29 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
 )
 
 const (
-	wmNull          = 0x0000
-	wmDestroy       = 0x0002
-	wmClose         = 0x0010
-	wmContextMenu   = 0x007B
-	wmCommand       = 0x0111
-	wmUser          = 0x0400
-	wmAppTray       = wmUser + 1
-	wmAppShowMenu   = wmUser + 2
-	wmRButtonDown   = 0x0204
-	wmRButtonUp     = 0x0205
-	wmLButtonDblClk = 0x0203
+	wmNull             = 0x0000
+	wmDestroy          = 0x0002
+	wmClose            = 0x0010
+	wmContextMenu      = 0x007B
+	wmCommand          = 0x0111
+	wmHotkey           = 0x0312
+	wmUser             = 0x0400
+	wmAppTray          = wmUser + 1
+	wmAppShowMenu      = wmUser + 2
+	wmAppReloadHotkeys = wmUser + 3
+	wmRButtonDown      = 0x0204
+	wmRButtonUp        = 0x0205
+	wmLButtonDblClk    = 0x0203
 
 	mfString    = 0x0000
 	mfSeparator = 0x0800
@@ -48,28 +54,34 @@ const (
 
 	mbOK              = 0x00000000
 	mbIconError       = 0x00000010
-	mbIconQuestion    = 0x00000020
 	mbIconInfo        = 0x00000040
-	mbYesNo           = 0x00000004
 	mbSetForeground   = 0x00010000
-	idYes             = 6
 	cfUnicodeText     = 13
 	gmemMoveable      = 0x0002
 	gmemZeroInit      = 0x0040
 	clipboardRetryNum = 8
+	modAlt            = 0x0001
+	modControl        = 0x0002
+	modShift          = 0x0004
+	modWin            = 0x0008
+	modNoRepeat       = 0x4000
 )
 
 const (
 	menuOpenControl     = 1001
-	menuOpenOverlay     = 1002
 	menuOpenMiniControl = 1003
 	menuCopyOverlay     = 1004
-	menuCopyControl     = 1005
 	menuChangePort      = 1006
 	menuClearQueue      = 1007
 	menuOpenDataDir     = 1008
 	menuOpenLog         = 1009
 	menuExit            = 1010
+	menuNextQueue       = 1011
+
+	hotkeyOpenControl     = 2001
+	hotkeyOpenMiniControl = 2002
+	hotkeyNextQueue       = 2003
+	hotkeyClearQueue      = 2004
 )
 
 var (
@@ -100,6 +112,8 @@ var (
 	procEmptyClipboard   = user32.NewProc("EmptyClipboard")
 	procSetClipboardData = user32.NewProc("SetClipboardData")
 	procCloseClipboard   = user32.NewProc("CloseClipboard")
+	procRegisterHotKey   = user32.NewProc("RegisterHotKey")
+	procUnregisterHotKey = user32.NewProc("UnregisterHotKey")
 
 	procShellNotifyIconW = shell32.NewProc("Shell_NotifyIconW")
 
@@ -150,18 +164,41 @@ type notifyIconData struct {
 }
 
 type trayApp struct {
-	app         *App
-	controller  *ServerController
-	dataDir     string
-	hwnd        uintptr
-	hIcon       uintptr
-	customIcon  bool
-	menuOpen    bool
-	menuPending bool
-	exiting     bool
+	app               *App
+	controller        *ServerController
+	dataDir           string
+	hwnd              uintptr
+	hIcon             uintptr
+	customIcon        bool
+	menuOpen          bool
+	menuPending       bool
+	exiting           atomic.Bool
+	hotkeyRequests    chan hotkeyReloadRequest
+	registeredHotkeys []int32
 }
 
-var activeTray *trayApp
+type hotkeyReloadRequest struct {
+	config HotkeyConfig
+	done   chan map[string]string
+}
+
+var (
+	activeTrayMu sync.RWMutex
+	activeTray   *trayApp
+)
+
+func setActiveTray(t *trayApp) {
+	activeTrayMu.Lock()
+	activeTray = t
+	activeTrayMu.Unlock()
+}
+
+func getActiveTray() *trayApp {
+	activeTrayMu.RLock()
+	t := activeTray
+	activeTrayMu.RUnlock()
+	return t
+}
 
 func runTray(app *App, controller *ServerController, dataDir string) error {
 	runtime.LockOSThread()
@@ -195,12 +232,22 @@ func runTray(app *App, controller *ServerController, dataDir string) error {
 		return fmt.Errorf("CreateWindowExW: %w", err)
 	}
 
-	t := &trayApp{app: app, controller: controller, dataDir: dataDir, hwnd: hwnd, hIcon: hIcon, customIcon: customIcon}
-	activeTray = t
+	t := &trayApp{
+		app: app, controller: controller, dataDir: dataDir, hwnd: hwnd,
+		hIcon: hIcon, customIcon: customIcon,
+		hotkeyRequests: make(chan hotkeyReloadRequest, 8),
+	}
+	setActiveTray(t)
 	if err := t.addIcon(); err != nil {
+		setActiveTray(nil)
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		return err
 	}
+	app.mu.RLock()
+	hotkeys := app.config.Hotkeys
+	app.mu.RUnlock()
+	app.setHotkeyStatus(t.applyHotkeys(hotkeys))
+	app.broadcast()
 	log.Printf("tray ready")
 
 	var m msg
@@ -218,7 +265,7 @@ func runTray(app *App, controller *ServerController, dataDir string) error {
 }
 
 func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-	t := activeTray
+	t := getActiveTray()
 	switch message {
 	case wmAppTray:
 		if t == nil {
@@ -245,6 +292,16 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			t.showMenu()
 		}
 		return 0
+	case wmAppReloadHotkeys:
+		if t != nil {
+			t.processHotkeyReloads()
+		}
+		return 0
+	case wmHotkey:
+		if t != nil {
+			go t.handleHotkey(int32(wParam))
+		}
+		return 0
 	case wmCommand:
 		if t != nil {
 			id := uint16(wParam & 0xffff)
@@ -254,6 +311,7 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmClose:
 		closeActivePrompt()
 		if t != nil {
+			t.exiting.Store(true)
 			t.shutdownServer()
 		}
 		procDestroyWindow.Call(hwnd)
@@ -261,6 +319,7 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	case wmDestroy:
 		if t != nil {
 			t.removeIcon()
+			setActiveTray(nil)
 		}
 		procPostQuitMessage.Call(0)
 		return 0
@@ -299,6 +358,7 @@ func (t *trayApp) addIcon() error {
 }
 
 func (t *trayApp) removeIcon() {
+	t.unregisterHotkeys()
 	var nid notifyIconData
 	nid.cbSize = uint32(unsafe.Sizeof(nid))
 	nid.hWnd = t.hwnd
@@ -311,7 +371,7 @@ func (t *trayApp) removeIcon() {
 }
 
 func (t *trayApp) requestMenu() {
-	if t == nil || t.exiting || t.menuOpen || t.menuPending {
+	if t == nil || t.exiting.Load() || t.menuOpen || t.menuPending {
 		return
 	}
 	t.menuPending = true
@@ -319,7 +379,7 @@ func (t *trayApp) requestMenu() {
 }
 
 func (t *trayApp) showMenu() {
-	if t == nil || t.exiting || t.menuOpen {
+	if t == nil || t.exiting.Load() || t.menuOpen {
 		return
 	}
 	t.menuOpen = true
@@ -330,12 +390,11 @@ func (t *trayApp) showMenu() {
 	}
 	defer procDestroyMenu.Call(menu)
 	appendMenu(menu, mfString, menuOpenControl, "打开控制台")
-	appendMenu(menu, mfString, menuOpenOverlay, "打开横条")
 	appendMenu(menu, mfString, menuOpenMiniControl, "打开简易控制页")
 	appendMenu(menu, mfString, menuCopyOverlay, "复制浏览器源地址")
-	appendMenu(menu, mfString, menuCopyControl, "复制控制台地址")
 	appendMenu(menu, mfString, menuChangePort, "修改端口")
 	appendMenu(menu, mfSeparator, 0, "")
+	appendMenu(menu, mfString, menuNextQueue, "下一位")
 	appendMenu(menu, mfString, menuClearQueue, "清空队列")
 	appendMenu(menu, mfString, menuOpenDataDir, "打开数据文件夹")
 	appendMenu(menu, mfString, menuOpenLog, "打开日志文件")
@@ -366,28 +425,19 @@ func (t *trayApp) handleMenu(id uint16) {
 	switch id {
 	case menuOpenControl:
 		t.openControl()
-	case menuOpenOverlay:
-		if err := openBrowser(freshOpenURL(t.overlayURL())); err != nil {
-			log.Printf("open overlay: %v", err)
-		}
 	case menuOpenMiniControl:
-		if err := openBrowser(freshOpenURL(t.miniControlURL())); err != nil {
-			log.Printf("open mini control: %v", err)
-		}
+		t.openMiniControl()
 	case menuCopyOverlay:
 		if err := copyTextToClipboard(t.overlayURL()); err != nil {
 			log.Printf("copy source url: %v", err)
 			messageBox("BiliQueue", "复制失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
 		}
-	case menuCopyControl:
-		if err := copyTextToClipboard(t.controlURL()); err != nil {
-			log.Printf("copy control url: %v", err)
-			messageBox("BiliQueue", "复制失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
-		}
 	case menuChangePort:
 		t.changePort()
+	case menuNextQueue:
+		t.app.advanceQueue()
 	case menuClearQueue:
-		if messageBox("BiliQueue", "确定清空当前队列吗？", mbYesNo|mbIconQuestion|mbSetForeground) == idYes {
+		if showStyledConfirmDialog("清空队列", "确定清空当前队列吗？此操作无法撤销。") {
 			t.app.clearQueue()
 		}
 	case menuOpenDataDir:
@@ -396,10 +446,169 @@ func (t *trayApp) handleMenu(id uint16) {
 		openPath(filepath.Join(t.dataDir, "logs", "biliqueue.log"))
 	case menuExit:
 		log.Printf("tray exit requested")
-		if !t.exiting {
-			t.exiting = true
+		if t.exiting.CompareAndSwap(false, true) {
 			closeActivePrompt()
 			procPostMessageW.Call(t.hwnd, wmClose, 0, 0)
+		}
+	}
+}
+
+func reloadGlobalHotkeys(cfg HotkeyConfig) map[string]string {
+	t := getActiveTray()
+	if t == nil || t.hwnd == 0 || t.exiting.Load() {
+		return defaultHotkeyStatus("托盘模式未启用")
+	}
+	req := hotkeyReloadRequest{config: cfg, done: make(chan map[string]string, 1)}
+	select {
+	case t.hotkeyRequests <- req:
+		procPostMessageW.Call(t.hwnd, wmAppReloadHotkeys, 0, 0)
+	case <-time.After(2 * time.Second):
+		return defaultHotkeyStatus("快捷键更新队列繁忙")
+	}
+	select {
+	case status := <-req.done:
+		return status
+	case <-time.After(3 * time.Second):
+		return defaultHotkeyStatus("快捷键注册超时")
+	}
+}
+
+func (t *trayApp) processHotkeyReloads() {
+	for {
+		select {
+		case req := <-t.hotkeyRequests:
+			req.done <- t.applyHotkeys(req.config)
+		default:
+			return
+		}
+	}
+}
+
+func (t *trayApp) unregisterHotkeys() {
+	for _, id := range t.registeredHotkeys {
+		procUnregisterHotKey.Call(t.hwnd, uintptr(id))
+	}
+	t.registeredHotkeys = nil
+}
+
+func (t *trayApp) applyHotkeys(cfg HotkeyConfig) map[string]string {
+	t.unregisterHotkeys()
+	type binding struct {
+		key   string
+		label string
+		value string
+		id    int32
+	}
+	bindings := []binding{
+		{key: "openControl", label: "打开控制台网页", value: cfg.OpenControl, id: hotkeyOpenControl},
+		{key: "openMiniControl", label: "打开简易控制页", value: cfg.OpenMiniControl, id: hotkeyOpenMiniControl},
+		{key: "nextQueue", label: "下一位", value: cfg.NextQueue, id: hotkeyNextQueue},
+		{key: "clearQueue", label: "清空队列", value: cfg.ClearQueue, id: hotkeyClearQueue},
+	}
+	status := make(map[string]string, len(bindings))
+	seen := make(map[string]string, len(bindings))
+	for _, item := range bindings {
+		value := strings.TrimSpace(item.value)
+		if value == "" {
+			status[item.key] = "未设置"
+			continue
+		}
+		modifiers, virtualKey, canonical, err := parseWindowsHotkey(value)
+		if err != nil {
+			status[item.key] = "无效快捷键：" + err.Error()
+			continue
+		}
+		duplicateKey := strings.ToLower(canonical)
+		if label, exists := seen[duplicateKey]; exists {
+			status[item.key] = "与“" + label + "”重复"
+			continue
+		}
+		seen[duplicateKey] = item.label
+		result, _, _ := procRegisterHotKey.Call(t.hwnd, uintptr(item.id), uintptr(modifiers|modNoRepeat), uintptr(virtualKey))
+		if result == 0 {
+			status[item.key] = "注册失败，快捷键可能已被占用"
+			continue
+		}
+		t.registeredHotkeys = append(t.registeredHotkeys, item.id)
+		status[item.key] = "已启用"
+	}
+	return status
+}
+
+func parseWindowsHotkey(value string) (uint32, uint32, string, error) {
+	parts := strings.Split(value, "+")
+	if len(parts) == 0 {
+		return 0, 0, "", fmt.Errorf("格式为空")
+	}
+	var modifiers uint32
+	canonical := make([]string, 0, len(parts))
+	for _, raw := range parts[:len(parts)-1] {
+		part := strings.ToLower(strings.TrimSpace(raw))
+		switch part {
+		case "ctrl", "control":
+			modifiers |= modControl
+			canonical = append(canonical, "Ctrl")
+		case "alt":
+			modifiers |= modAlt
+			canonical = append(canonical, "Alt")
+		case "shift":
+			modifiers |= modShift
+			canonical = append(canonical, "Shift")
+		case "win", "meta":
+			modifiers |= modWin
+			canonical = append(canonical, "Win")
+		default:
+			return 0, 0, "", fmt.Errorf("无法识别修饰键 %q", raw)
+		}
+	}
+	key := strings.TrimSpace(parts[len(parts)-1])
+	virtualKey, keyLabel, err := windowsVirtualKey(key)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	canonical = append(canonical, keyLabel)
+	return modifiers, virtualKey, strings.Join(canonical, "+"), nil
+}
+
+func windowsVirtualKey(key string) (uint32, string, error) {
+	upper := strings.ToUpper(strings.TrimSpace(key))
+	if len(upper) == 1 {
+		ch := upper[0]
+		if ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' {
+			return uint32(ch), upper, nil
+		}
+	}
+	if strings.HasPrefix(upper, "F") {
+		if number, err := strconv.Atoi(strings.TrimPrefix(upper, "F")); err == nil && number >= 1 && number <= 24 {
+			return uint32(0x70 + number - 1), "F" + strconv.Itoa(number), nil
+		}
+	}
+	keys := map[string]struct {
+		code  uint32
+		label string
+	}{
+		"SPACE": {0x20, "Space"}, "ENTER": {0x0D, "Enter"}, "TAB": {0x09, "Tab"},
+		"BACKSPACE": {0x08, "Backspace"}, "DELETE": {0x2E, "Delete"}, "INSERT": {0x2D, "Insert"},
+		"HOME": {0x24, "Home"}, "END": {0x23, "End"}, "PAGEUP": {0x21, "PageUp"}, "PAGEDOWN": {0x22, "PageDown"},
+		"ARROWUP": {0x26, "ArrowUp"}, "ARROWDOWN": {0x28, "ArrowDown"}, "ARROWLEFT": {0x25, "ArrowLeft"}, "ARROWRIGHT": {0x27, "ArrowRight"},
+	}
+	if item, ok := keys[upper]; ok {
+		return item.code, item.label, nil
+	}
+	return 0, "", fmt.Errorf("无法识别按键 %q", key)
+}
+
+func (t *trayApp) handleHotkey(id int32) {
+	switch id {
+	case hotkeyOpenControl:
+		t.openControl()
+	case hotkeyOpenMiniControl:
+		t.openMiniControl()
+	case hotkeyNextQueue:
+		t.app.advanceQueue()
+	case hotkeyClearQueue:
+		if showStyledConfirmDialog("清空队列", "确定清空当前队列吗？此操作无法撤销。") {
+			t.app.clearQueue()
 		}
 	}
 }
@@ -412,6 +621,12 @@ func (t *trayApp) miniControlURL() string { return urlForListen(t.listenAddress(
 func (t *trayApp) openControl() {
 	if err := openBrowser(freshOpenURL(t.controlURL())); err != nil {
 		log.Printf("open control: %v", err)
+	}
+}
+
+func (t *trayApp) openMiniControl() {
+	if err := openMiniControlWindow(t.app); err != nil {
+		log.Printf("open mini control: %v", err)
 	}
 }
 
@@ -431,6 +646,7 @@ func (t *trayApp) changePort() {
 }
 
 func (t *trayApp) shutdownServer() {
+	closeMiniControlWindow()
 	if t.app != nil {
 		t.app.prepareExit()
 	}

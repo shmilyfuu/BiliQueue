@@ -10,6 +10,9 @@ let qrKey = null;
 let fontFiles = [];
 let textDraftDirty = false;
 let configWriteChain = Promise.resolve();
+let recordingHotkey = null;
+let hotkeyValues = {openControl:'', openMiniControl:'', nextQueue:'', clearQueue:''};
+let pendingHotkeys = null;
 
 const deferredTextIds = ['emptyText', 'queueEmptyText', 'infoText'];
 const deferredTextMirrors = {
@@ -113,7 +116,11 @@ async function api(path, options = {}) {
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = new Error(data.error || `HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
   return data;
 }
 
@@ -367,6 +374,94 @@ function giftHTML(user) {
   return `<span class="gift-badge" title="${escapeHtml(user.giftName || '礼物')} · ${amount}电池">${icon}<b>${escapeHtml(user.giftName || '礼物')}</b><em>${amount}电池</em></span>`;
 }
 
+function renderHotkeys(config = {}, status = {}) {
+  const source = pendingHotkeys || config;
+  hotkeyValues = {
+    openControl: source.openControl || '',
+    openMiniControl: source.openMiniControl || '',
+    nextQueue: source.nextQueue || '',
+    clearQueue: source.clearQueue || '',
+  };
+  for (const key of Object.keys(hotkeyValues)) {
+    const valueNode = document.querySelector(`[data-hotkey-value="${key}"]`);
+    const statusNode = document.querySelector(`[data-hotkey-status="${key}"]`);
+    const row = document.querySelector(`[data-hotkey-row="${key}"]`);
+    const button = document.querySelector(`[data-hotkey-record="${key}"]`);
+    if (valueNode && recordingHotkey !== key) valueNode.textContent = hotkeyValues[key] || '未设置';
+    if (statusNode && recordingHotkey !== key) statusNode.textContent = status[key] || '未设置';
+    if (row) row.classList.toggle('is-active', status[key] === '已启用');
+    if (row) row.classList.toggle('has-error', Boolean(status[key]) && status[key] !== '已启用' && status[key] !== '未设置');
+    if (button && recordingHotkey !== key) button.textContent = '录制快捷键';
+  }
+}
+
+function hotkeyKeyFromEvent(event) {
+  if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3);
+  if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  if (/^F(?:[1-9]|1\d|2[0-4])$/.test(event.key)) return event.key.toUpperCase();
+  const keys = {
+    ' ':'Space', Spacebar:'Space', Enter:'Enter', Tab:'Tab', Backspace:'Backspace', Delete:'Delete', Insert:'Insert',
+    Home:'Home', End:'End', PageUp:'PageUp', PageDown:'PageDown', ArrowUp:'ArrowUp', ArrowDown:'ArrowDown',
+    ArrowLeft:'ArrowLeft', ArrowRight:'ArrowRight',
+  };
+  return keys[event.key] || '';
+}
+
+function capturedHotkey(event) {
+  const key = hotkeyKeyFromEvent(event);
+  if (!key) return '';
+  const parts = [];
+  if (event.ctrlKey) parts.push('Ctrl');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  if (event.metaKey) parts.push('Win');
+  parts.push(key);
+  return parts.join('+');
+}
+
+async function saveRecordedHotkey(key, value) {
+  const nextHotkeys = {...hotkeyValues, [key]:value};
+  hotkeyValues = nextHotkeys;
+  pendingHotkeys = nextHotkeys;
+  const statusNode = document.querySelector(`[data-hotkey-status="${key}"]`);
+  if (statusNode) statusNode.textContent = value ? '正在注册…' : '正在清除…';
+  try {
+    const result = await queueConfigWrite(() => api('/api/hotkeys', {body:nextHotkeys}));
+    pendingHotkeys = null;
+    render(result);
+    toast(value ? '快捷键已保存' : '快捷键已清除');
+  } catch (err) {
+    pendingHotkeys = null;
+    toast(err.message);
+    if (state) renderHotkeys(state.config?.hotkeys, state.hotkeyStatus);
+  }
+}
+
+function stopHotkeyRecording(value) {
+  const key = recordingHotkey;
+  if (!key) return;
+  recordingHotkey = null;
+  document.querySelector(`[data-hotkey-row="${key}"]`)?.classList.remove('is-recording');
+  saveRecordedHotkey(key, value);
+}
+
+function handleHotkeyCapture(event) {
+  if (!recordingHotkey || event.repeat) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.key === 'Escape') {
+    stopHotkeyRecording('');
+    return;
+  }
+  if (['Control','Alt','Shift','Meta'].includes(event.key)) return;
+  const value = capturedHotkey(event);
+  if (!value) {
+    toast('这个按键暂不支持，请换一个组合键');
+    return;
+  }
+  stopHotkeyRecording(value);
+}
+
 function render(nextState) {
   const firstRender = !state;
   state = nextState;
@@ -392,6 +487,7 @@ function render(nextState) {
   if ($('listenPort') && (firstRender || document.activeElement !== $('listenPort'))) $('listenPort').value = listenParts.port;
   $('nextBtn').disabled = state.queue.length === 0;
   $('skipBtn').disabled = state.queue.length < 2;
+  renderHotkeys(cfg.hotkeys, state.hotkeyStatus);
 
   if (firstRender || document.activeElement !== $('roomId')) $('roomId').value = cfg.roomId || '';
   renderCurrent();
@@ -641,7 +737,7 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: Number(state?.config?.schemaVersion) || 12,
+    schemaVersion: Number(state?.config?.schemaVersion) || 13,
     listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     queueEnabled: $('queueEnabled')?.value !== 'false',
@@ -655,6 +751,7 @@ function collectConfig(options = {}) {
       thresholdBattery: Number($('giftThresholdBattery').value) || 100,
       sortByValue: $('giftSortByValue').checked,
     },
+    hotkeys: {...hotkeyValues},
     overlay: {
       height: Number($('height').value),
       fontSize: Number($('queueFontSize').value),
@@ -1097,7 +1194,11 @@ async function changeListenAddress() {
   } catch (err) {
     return toast(err.message);
   }
-  if (!confirm(`将本机服务切换到 ${listenAddress}？控制台会跳转到新地址。`)) return;
+  if (!await showAppConfirm({
+    title:'修改服务地址',
+    message:`将本机服务切换到 ${listenAddress}？\n应用后控制台会跳转到新地址。`,
+    confirmText:'应用并跳转',
+  })) return;
   try {
     cancelScheduledSave();
     const result = await queueConfigWrite(() => api('/api/server/listen', {body:{listenAddress}}));
@@ -1120,6 +1221,26 @@ async function init() {
   bindDeferredTextMirrors();
   await loadFontOptions();
 
+  document.querySelectorAll('[data-hotkey-record]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (recordingHotkey) {
+        const previous = recordingHotkey;
+        recordingHotkey = null;
+        document.querySelector(`[data-hotkey-row="${previous}"]`)?.classList.remove('is-recording');
+        renderHotkeys(state?.config?.hotkeys, state?.hotkeyStatus);
+      }
+      recordingHotkey = button.dataset.hotkeyRecord;
+      const row = document.querySelector(`[data-hotkey-row="${recordingHotkey}"]`);
+      const valueNode = document.querySelector(`[data-hotkey-value="${recordingHotkey}"]`);
+      const statusNode = document.querySelector(`[data-hotkey-status="${recordingHotkey}"]`);
+      row?.classList.add('is-recording');
+      if (valueNode) valueNode.textContent = '请按下快捷键';
+      if (statusNode) statusNode.textContent = '按 Esc 停止并清除';
+      button.textContent = '录制中';
+    });
+  });
+  document.addEventListener('keydown', handleHotkeyCapture, true);
+
   const source = new EventSource('/events');
   source.onmessage = event => render(JSON.parse(event.data));
   source.onerror = () => $('connectionDetail').textContent = '控制台与本机服务的事件流已中断，浏览器会自动尝试恢复';
@@ -1129,7 +1250,7 @@ async function init() {
   $('closeQrBtn').addEventListener('click', () => { stopQrPolling(); $('qrModal').classList.add('hidden'); });
   $('qrModal').addEventListener('click', event => { if (event.target === $('qrModal')) { stopQrPolling(); $('qrModal').classList.add('hidden'); } });
   $('logoutBtn').addEventListener('click', async () => {
-    if (!confirm('退出当前 B 站登录？')) return;
+    if (!await showAppConfirm({title:'退出登录', message:'确定退出当前 B 站登录吗？', confirmText:'退出登录', danger:true})) return;
     try { await api('/api/auth/logout'); } catch (err) { toast(err.message); }
   });
   $('exportConfigBtn').addEventListener('click', () => exportConfig().then(() => toast('配置已导出')).catch(err => toast(err.message)));
@@ -1138,7 +1259,7 @@ async function init() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!confirm('导入配置会覆盖当前设置，现有设置会先自动备份。继续吗？')) return;
+    if (!await showAppConfirm({title:'导入配置', message:'导入配置会覆盖当前设置，现有设置会先自动备份。', confirmText:'导入配置', danger:true})) return;
     try { await importConfigFile(file); } catch (err) { toast(err.message); }
   });
 
@@ -1150,7 +1271,7 @@ async function init() {
   $('skipBtn').addEventListener('click', () => api('/api/queue/skip').catch(err => toast(err.message)));
   $('pauseBtn').addEventListener('click', () => api('/api/queue/pause', {body:{paused:!state.paused}}).catch(err => toast(err.message)));
   $('clearBtn').addEventListener('click', async () => {
-    if (!confirm('清空当前队列？')) return;
+    if (!await showAppConfirm({title:'清空队列', message:'确定清空当前队列吗？此操作无法撤销。', confirmText:'清空队列', danger:true})) return;
     try { await api('/api/queue/clear'); } catch (err) { toast(err.message); }
   });
   $('manualBtn').addEventListener('click', async () => {
@@ -1263,7 +1384,14 @@ async function init() {
     }
   });
   $('openOverlayBtn').addEventListener('click', () => window.open('/overlay','_blank'));
-  $('openMiniControlBtn').addEventListener('click', () => window.open('/mini-control','_blank'));
+  $('openMiniControlBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/window/mini-control/open');
+    } catch (err) {
+      if (err.status === 501) window.open('/mini-control', '_blank');
+      else toast(err.message);
+    }
+  });
   $('changeListenBtn').addEventListener('click', changeListenAddress);
   $('resetListenBtn').addEventListener('click', () => { $('listenHost').value = '127.0.0.1'; $('listenPort').value = '18303'; toast('\u5df2\u6062\u590d\u9ed8\u8ba4\u670d\u52a1\u5730\u5740\uff0c\u5e94\u7528\u540e\u751f\u6548'); });
 }

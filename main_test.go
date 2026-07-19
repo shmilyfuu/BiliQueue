@@ -11,8 +11,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestVersionFileMatchesBinaryVersion(t *testing.T) {
+	data, err := os.ReadFile("VERSION")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fileVersion := strings.TrimSpace(string(data)); fileVersion != version {
+		t.Fatalf("VERSION mismatch: file=%q binary=%q", fileVersion, version)
+	}
+}
 
 func TestQueueCommands(t *testing.T) {
 	a := newApp(t.TempDir())
@@ -230,6 +242,32 @@ func TestHTTPDebugFlow(t *testing.T) {
 	}
 }
 
+func TestMiniControlWindowEndpointsWithoutActiveWindow(t *testing.T) {
+	a := newApp(t.TempDir())
+	handler := a.routes()
+
+	stateResponse := httptest.NewRecorder()
+	handler.ServeHTTP(stateResponse, httptest.NewRequest(http.MethodGet, "/api/window/mini-control", nil))
+	if stateResponse.Code != http.StatusOK {
+		t.Fatalf("window state status: %d", stateResponse.Code)
+	}
+	var windowState MiniControlWindowState
+	if err := json.NewDecoder(stateResponse.Body).Decode(&windowState); err != nil {
+		t.Fatal(err)
+	}
+	if windowState.Supported != (runtime.GOOS == "windows") || windowState.Active || windowState.Opening {
+		t.Fatalf("unexpected inactive window state: %#v", windowState)
+	}
+
+	topmostResponse := httptest.NewRecorder()
+	topmostRequest := httptest.NewRequest(http.MethodPost, "/api/window/mini-control/topmost", bytes.NewBufferString(`{"topmost":true}`))
+	handler.ServeHTTP(topmostResponse, topmostRequest)
+	wantStatus := http.StatusConflict
+	if topmostResponse.Code != wantStatus {
+		t.Fatalf("inactive topmost status: got %d want %d", topmostResponse.Code, wantStatus)
+	}
+}
+
 func TestWBIHelpers(t *testing.T) {
 	img := wbiFilenameKey("https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png")
 	if img != "7cd084941338484aae1ad9425b84077c" {
@@ -385,7 +423,7 @@ func TestLegacyConfigMigration(t *testing.T) {
 	}
 	a := newApp(dir)
 	cfg := a.state().Config
-	if cfg.SchemaVersion != 12 || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
+	if cfg.SchemaVersion != defaultConfig().SchemaVersion || cfg.Overlay.InfoWidth != 520 || cfg.Overlay.QueueWidth != 1220 {
 		t.Fatalf("legacy widths not migrated: %#v", cfg.Overlay)
 	}
 	if cfg.Overlay.QueueLineGap != 8 || cfg.Overlay.InfoLineGap != 4 || cfg.Overlay.QueuePageSize != 5 || !cfg.Overlay.DoubleLineEnabled {
@@ -420,6 +458,26 @@ func TestNewConfigAllowsZeroHeight(t *testing.T) {
 	applyConfigDefaults(&cfg)
 	if cfg.Overlay.Height != 0 {
 		t.Fatalf("zero height was overwritten: %#v", cfg.Overlay)
+	}
+}
+
+func TestHotkeyConfigPersists(t *testing.T) {
+	dir := t.TempDir()
+	a := newApp(dir)
+	body := bytes.NewBufferString(`{"openControl":"Ctrl+Alt+C","openMiniControl":"F8","nextQueue":"Ctrl+Alt+N","clearQueue":"Ctrl+Alt+X"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/hotkeys", body)
+	rr := httptest.NewRecorder()
+	a.routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("hotkey response: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	want := HotkeyConfig{OpenControl: "Ctrl+Alt+C", OpenMiniControl: "F8", NextQueue: "Ctrl+Alt+N", ClearQueue: "Ctrl+Alt+X"}
+	if got := a.state().Config.Hotkeys; got != want {
+		t.Fatalf("hotkeys not applied: got %#v want %#v", got, want)
+	}
+	reloaded := newApp(dir)
+	if got := reloaded.state().Config.Hotkeys; got != want {
+		t.Fatalf("hotkeys not persisted: got %#v want %#v", got, want)
 	}
 }
 
@@ -459,7 +517,7 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	cfg.Overlay.ShortAlign = "center"
 	cfg.Overlay.EmptyText = "排队空闲中"
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 12 {
+	if cfg.SchemaVersion != defaultConfig().SchemaVersion {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.CurrentFontSize != 30 || cfg.Overlay.QueueFontSize != 30 {
@@ -522,7 +580,7 @@ func TestV6GradientRangeMigratesToStartEnd(t *testing.T) {
 	cfg.Overlay.GradientStart = 0
 	cfg.Overlay.GradientEnd = 0
 	applyConfigDefaults(&cfg)
-	if cfg.SchemaVersion != 12 {
+	if cfg.SchemaVersion != defaultConfig().SchemaVersion {
 		t.Fatalf("schema version not migrated: %d", cfg.SchemaVersion)
 	}
 	if cfg.Overlay.GradientStart != 50 || cfg.Overlay.GradientEnd != 100 {
