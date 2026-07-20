@@ -58,15 +58,20 @@ jq -n \
   '{access_token: $access_token, tag_name: $tag_name, target_commitish: $target_commitish, name: $name, body: $body, prerelease: false}' \
   > "$release_payload"
 
+existing_release_id=""
 if [[ "$status" == "200" ]]; then
+  existing_release_id="$(jq -r '.id // empty' "$release_json")"
+fi
+
+if [[ "$status" == "200" && -n "$existing_release_id" ]]; then
   echo "Updating existing Gitee release ${TAG}..."
-  release_id="$(jq -er '.id' "$release_json")"
+  release_id="$existing_release_id"
   status="$(curl --silent --show-error --output "$release_json" --write-out '%{http_code}' \
     --request PATCH "${API}/releases/${release_id}" \
     --header "Content-Type: application/json" \
     --data-binary "@${release_payload}")"
   expected_status="200"
-elif [[ "$status" == "404" ]]; then
+elif [[ "$status" == "404" || ( "$status" == "200" && -z "$existing_release_id" ) ]]; then
   echo "Creating Gitee release ${TAG}..."
   status="$(curl --silent --show-error --output "$release_json" --write-out '%{http_code}' \
     --request POST "${API}/releases" \
