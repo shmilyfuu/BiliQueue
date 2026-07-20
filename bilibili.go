@@ -28,13 +28,17 @@ import (
 const biliUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
 
 type ChatMessage struct {
-	UID        int64  `json:"uid"`
-	Username   string `json:"username"`
-	Avatar     string `json:"avatar,omitempty"`
-	Text       string `json:"text"`
-	MedalLevel int    `json:"medalLevel,omitempty"`
-	Manual     bool   `json:"manual,omitempty"`
-	ReceivedAt int64  `json:"receivedAt"`
+	UID              int64  `json:"uid"`
+	Username         string `json:"username"`
+	Avatar           string `json:"avatar,omitempty"`
+	Text             string `json:"text"`
+	MedalLevel       int    `json:"medalLevel,omitempty"`
+	MedalRoomID      int64  `json:"medalRoomId,omitempty"`
+	MedalTargetUID   int64  `json:"medalTargetUid,omitempty"`
+	MedalCurrentRoom bool   `json:"medalCurrentRoom,omitempty"`
+	GuardLevel       int    `json:"guardLevel,omitempty"`
+	Manual           bool   `json:"manual,omitempty"`
+	ReceivedAt       int64  `json:"receivedAt"`
 }
 
 type GiftMessage struct {
@@ -49,7 +53,16 @@ type GiftMessage struct {
 	CoinType   string  `json:"coinType"`
 	TotalCoin  int64   `json:"totalCoin"`
 	Battery    float64 `json:"battery"`
+	GuardLevel int     `json:"guardLevel,omitempty"`
 	ReceivedAt int64   `json:"receivedAt"`
+}
+
+type GuardMessage struct {
+	UID        int64  `json:"uid"`
+	Username   string `json:"username"`
+	Avatar     string `json:"avatar,omitempty"`
+	GuardLevel int    `json:"guardLevel"`
+	ReceivedAt int64  `json:"receivedAt"`
 }
 
 type ConnectionUpdate struct {
@@ -87,7 +100,7 @@ type biliSession struct {
 	AnchorUID  int64
 }
 
-func (b *BiliClient) Run(ctx context.Context, roomInput string, onStatus func(ConnectionUpdate), onMessage func(ChatMessage), onGift func(GiftMessage)) {
+func (b *BiliClient) Run(ctx context.Context, roomInput string, onStatus func(ConnectionUpdate), onMessage func(ChatMessage), onGift func(GiftMessage), onGuard func(GuardMessage)) {
 	inputID, err := strconv.ParseInt(roomInput, 10, 64)
 	if err != nil || inputID <= 0 {
 		onStatus(ConnectionUpdate{Status: "error", Detail: "直播间号格式不正确"})
@@ -128,7 +141,7 @@ func (b *BiliClient) Run(ctx context.Context, roomInput string, onStatus func(Co
 				AnchorName: session.AnchorName,
 				AnchorUID:  session.AnchorUID,
 			})
-		}, onMessage, onGift)
+		}, onMessage, onGift, onGuard)
 		if ctx.Err() != nil {
 			return
 		}
@@ -428,7 +441,7 @@ func setBiliHeaders(req *http.Request, cookie string) {
 	}
 }
 
-func (b *BiliClient) connectOnce(ctx context.Context, session biliSession, onConnected func(string), onMessage func(ChatMessage), onGift func(GiftMessage)) error {
+func (b *BiliClient) connectOnce(ctx context.Context, session biliSession, onConnected func(string), onMessage func(ChatMessage), onGift func(GiftMessage), onGuard func(GuardMessage)) error {
 	ws, err := dialWebSocket(ctx, session.WSURL)
 	if err != nil {
 		return err
@@ -506,6 +519,10 @@ func (b *BiliClient) connectOnce(ctx context.Context, session biliSession, onCon
 					if gift, ok := parseGiftMessage(obj); ok {
 						gift.ReceivedAt = time.Now().UnixMilli()
 						onGift(gift)
+					}
+					if guard, ok := parseGuardMessage(obj); ok {
+						guard.ReceivedAt = time.Now().UnixMilli()
+						onGuard(guard)
 					}
 				}
 			}
@@ -597,14 +614,29 @@ func parseDanmuMessage(obj map[string]any) (ChatMessage, bool) {
 			uid := numberToInt64(user[0])
 			username, _ := user[1].(string)
 			medal := 0
+			var medalRoomID, medalTargetUID int64
 			if len(info) > 3 {
 				if medalData, ok := info[3].([]any); ok && len(medalData) > 0 {
 					medal = int(numberToInt64(medalData[0]))
+					if len(medalData) > 3 {
+						medalRoomID = numberToInt64(medalData[3])
+					}
+					if len(medalData) > 12 {
+						medalTargetUID = numberToInt64(medalData[12])
+					}
 				}
+			}
+			guardLevel := 0
+			if len(info) > 7 {
+				guardLevel = int(numberToInt64(info[7]))
 			}
 			avatar := extractDanmuAvatar(info)
 			if uid != 0 && username != "" {
-				return ChatMessage{UID: uid, Username: username, Avatar: avatar, Text: text, MedalLevel: medal}, true
+				return ChatMessage{
+					UID: uid, Username: username, Avatar: avatar, Text: text,
+					MedalLevel: medal, MedalRoomID: medalRoomID, MedalTargetUID: medalTargetUID,
+					GuardLevel: guardLevel,
+				}, true
 			}
 		}
 	}
@@ -619,7 +651,20 @@ func parseDanmuMessage(obj map[string]any) (ChatMessage, bool) {
 			avatar = nestedString(data, "sender_uinfo", "base", "face")
 		}
 		if uid != 0 && username != "" {
-			return ChatMessage{UID: uid, Username: username, Avatar: normalizeBiliImageURL(avatar), Text: text}, true
+			guardLevel := int(firstInt64(data, "guard_level"))
+			if guardLevel == 0 {
+				guardLevel = int(nestedInt64(data, "sender_uinfo", "guard", "level"))
+			}
+			medalLevel := int(firstInt64(data, "fans_medal_level", "medal_level"))
+			medalCurrentRoom := medalLevel > 0
+			if raw, exists := data["fans_medal_wearing_status"]; exists {
+				medalCurrentRoom = anyBool(raw)
+			}
+			return ChatMessage{
+				UID: uid, Username: username, Avatar: normalizeBiliImageURL(avatar), Text: text,
+				MedalLevel: medalLevel, MedalCurrentRoom: medalCurrentRoom,
+				GuardLevel: guardLevel,
+			}, true
 		}
 	}
 	return ChatMessage{}, false
@@ -709,10 +754,39 @@ func parseGiftMessage(obj map[string]any) (GiftMessage, bool) {
 	if uid <= 0 || username == "" || giftName == "" {
 		return GiftMessage{}, false
 	}
+	guardLevel := int(firstInt64(data, "guard_level"))
+	if guardLevel == 0 {
+		guardLevel = int(nestedInt64(data, "sender_uinfo", "guard", "level"))
+	}
 	return GiftMessage{
 		EventID: eventID, UID: uid, Username: username, Avatar: avatar,
 		GiftID: giftID, GiftName: giftName, GiftIcon: giftIcon, Num: num,
 		CoinType: coinType, TotalCoin: totalCoin, Battery: float64(totalCoin) / 100,
+		GuardLevel: guardLevel,
+	}, true
+}
+
+func parseGuardMessage(obj map[string]any) (GuardMessage, bool) {
+	cmd, _ := obj["cmd"].(string)
+	if cmd != "GUARD_BUY" {
+		return GuardMessage{}, false
+	}
+	data, ok := obj["data"].(map[string]any)
+	if !ok {
+		return GuardMessage{}, false
+	}
+	uid := firstInt64(data, "uid")
+	username := firstString(data, "username", "uname")
+	guardLevel := int(firstInt64(data, "guard_level"))
+	avatar := firstString(data, "face")
+	if avatar == "" {
+		avatar = nestedString(data, "uinfo", "base", "face")
+	}
+	if uid <= 0 || guardLevel < 1 || guardLevel > 3 {
+		return GuardMessage{}, false
+	}
+	return GuardMessage{
+		UID: uid, Username: username, Avatar: normalizeBiliImageURL(avatar), GuardLevel: guardLevel,
 	}, true
 }
 
@@ -727,6 +801,18 @@ func nestedString(root map[string]any, keys ...string) string {
 	}
 	s, _ := current.(string)
 	return s
+}
+
+func nestedInt64(root map[string]any, keys ...string) int64 {
+	var current any = root
+	for _, key := range keys {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return 0
+		}
+		current = m[key]
+	}
+	return numberToInt64(current)
 }
 
 func numberToInt64(v any) int64 {
@@ -745,6 +831,26 @@ func numberToInt64(v any) int64 {
 		return i
 	default:
 		return 0
+	}
+}
+
+func anyBool(v any) bool {
+	switch value := v.(type) {
+	case bool:
+		return value
+	case float64:
+		return value != 0
+	case json.Number:
+		return value.String() != "0"
+	case int:
+		return value != 0
+	case int64:
+		return value != 0
+	case string:
+		value = strings.TrimSpace(strings.ToLower(value))
+		return value == "1" || value == "true"
+	default:
+		return false
 	}
 }
 

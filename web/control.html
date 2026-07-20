@@ -13,6 +13,10 @@
         <h1>BiliQueue <span id="appVersion" class="app-version"></span></h1>
         <p>本机横向排队工具 · 浏览器源</p>
       </div>
+      <div class="topbar-actions">
+        <button id="releaseNotesBtn" type="button" class="btn">更新日志</button>
+        <button id="checkUpdateBtn" type="button" class="btn primary">检查更新</button>
+      </div>
     </header>
 
     <section class="preview-dock" aria-label="横条预览与地址">
@@ -80,7 +84,7 @@
               <div class="mock-actions">
                 <button id="mockJoinBtn" class="btn small">模拟“排队”</button>
                 <button id="mockGiftBtn" class="btn small gift">模拟礼物插队</button>
-                <input id="mockGiftBattery" type="number" min="1" step="1" placeholder="输入礼物价值（电池）">
+                <input id="mockGiftBattery" type="number" min="1" step="1" placeholder="输入礼物价值（电池），留空时默认为设置的插队门槛">
               </div>
               <p class="muted-hint">“模拟排队”和“模拟礼物插队”用于检查控制台和插件显示效果。</p>
             </div>
@@ -99,7 +103,7 @@
                 <button type="button" class="btn hotkey-record-btn" data-hotkey-record="openControl">录制快捷键</button>
               </div>
               <div class="hotkey-row" data-hotkey-row="openMiniControl">
-                <div class="hotkey-copy"><strong>打开简易控制页</strong><small data-hotkey-status="openMiniControl">未设置</small></div>
+                <div class="hotkey-copy"><strong>打开/关闭简易控制页</strong><small data-hotkey-status="openMiniControl">未设置</small></div>
                 <kbd data-hotkey-value="openMiniControl">未设置</kbd>
                 <button type="button" class="btn hotkey-record-btn" data-hotkey-record="openMiniControl">录制快捷键</button>
               </div>
@@ -190,7 +194,7 @@
                 </div>
               </section>
             </div>
-            <div class="text-editor-options">
+            <div class="text-editor-options option-grid">
               <label class="checkbox-row"><input id="showCount" type="checkbox">显示队列数</label>
               <label class="checkbox-row"><input id="showRules" type="checkbox">显示自定义说明内容</label>
             </div>
@@ -214,14 +218,24 @@
               <div class="field"><label>下一位指令</label><input id="nextCommand" type="text" placeholder="下一位"></div>
               <div class="field"><label>加入排队指令</label><input id="joinCommand" type="text"></div>
               <div class="field"><label>取消排队指令</label><input id="cancelCommand" type="text"></div>
+              <div class="field"><label>礼物排队门槛（电池）</label><input id="giftQueueThresholdBattery" type="number" min="1" max="100000" step="1"></div>
               <div class="field"><label>礼物插队门槛（电池）</label><input id="giftThresholdBattery" type="number" min="1" max="100000" step="1"></div>
+              <div class="field"><label>粉丝牌等级</label><input id="fanMedalLevel" type="number" min="1" max="100" step="1"></div>
             </div>
-            <div class="rules-options">
+            <div class="rules-options option-grid">
+              <label class="checkbox-row"><input id="paidGiftQueueEnabled" type="checkbox">启用付费礼物排队</label>
+              <label class="checkbox-row"><input id="guardPriorityEnabled" type="checkbox">启用大航海优先排队</label>
               <label class="checkbox-row"><input id="giftPriorityEnabled" type="checkbox">启用付费礼物插队</label>
               <label class="checkbox-row"><input id="giftSortByValue" type="checkbox">礼物插队价值排序</label>
+              <label class="checkbox-row"><input id="fanMedalQueueEnabled" type="checkbox">启用粉丝牌排队</label>
+              <label class="checkbox-row"><input id="guardQueueEnabled" type="checkbox">启用大航海排队</label>
             </div>
             <div class="rules-notes setting-note">
-              <p>礼物插队仅计算单次送出的付费礼物价值，不累计。</p>
+              <p>粉丝牌和大航海仅限制弹幕指令排队；两项同时开启时，满足当前直播间粉丝牌等级或大航海任一条件即可。</p>
+              <p>启用大航海优先排队时，大航海排队会进入队列前方，优先插队，优先级高于付费礼物插队；插队优先级依次为总督、提督和舰长。</p>
+              <p>付费礼物排队是独立入队方式，不受粉丝牌和大航海限制；仅计算单次付费礼物价值，不累计。</p>
+              <p>付费礼物插队仅作用于已排队用户；通过付费礼物新入队且同时达到插队门槛时，会直接进入礼物优先区。</p>
+              <p>队列用户送出的任何礼物都会显示；图标取最后一次礼物，付费礼物电池累计展示，但排队和插队门槛仍只判断单次礼物。</p>
               <p>开启礼物插队价值排序时，送出礼物价值高的插队在礼物价值低的前面。</p>
               <p>未开启礼物插队价值排序时，后触发插队的人排在已有礼物优先用户之后。</p>
             </div>
@@ -273,15 +287,19 @@
               <div class="text-metric-quick" data-range-target="queueItemGap" data-label="队列间距"><span class="metric-label"><span>队列间距</span></span><input id="queueItemGap" class="metric-range" max="120" min="0" type="range"><input id="queueItemGapValue" class="metric-number" max="120" min="0" type="number"><span class="metric-unit">px</span></div>
               <div class="text-metric-quick" data-range-target="queueLineGap" data-label="双行队列行间距"><span class="metric-label"><span>双行队列行间距</span></span><input id="queueLineGap" class="metric-range" max="60" min="0" type="range"><input id="queueLineGapValue" class="metric-number" max="60" min="0" type="number"><span class="metric-unit">px</span></div>
               <label class="checkbox-row queue-style-toggle"><input id="doubleLineEnabled" type="checkbox">启用队列双行显示</label>
+              <div class="text-metric-quick" data-range-target="giftBatterySize" data-label="电池数字大小"><span class="metric-label"><span>电池数字大小</span></span><input id="giftBatterySize" class="metric-range" max="48" min="8" type="range"><input id="giftBatterySizeValue" class="metric-number" max="48" min="8" type="number"><span class="metric-unit">px</span></div>
             </div>
-            <div class="queue-style-options">
+            <div class="queue-style-options option-grid">
               <label class="checkbox-row"><input id="showAvatar" type="checkbox">显示头像</label>
+              <label class="checkbox-row"><input id="showGuardIcon" type="checkbox">显示大航海图标</label>
               <label class="checkbox-row"><input id="showGiftIcon" type="checkbox">显示送出礼物图标</label>
+              <label class="checkbox-row"><input id="showGiftBattery" type="checkbox">显示累计电池数</label>
             </div>
             <div class="queue-style-notes setting-note">
               <p>每行同屏队列数会把队列区域固定分成对应的列数。</p>
               <p>队列间距同时控制队列与队列区域左右边缘的间距和列与列之间的距离。</p>
               <p>用户名超过列宽时，超出部分显示为省略号。</p>
+              <p>累计电池数的统计期间仅为排队期间。</p>
             </div>
 
           </div>
@@ -401,6 +419,16 @@
       <div class="confirm-modal-actions">
         <button id="confirmCancelBtn" type="button" class="btn ghost">取消</button>
         <button id="confirmAcceptBtn" type="button" class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="updateModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+    <div class="modal-card update-modal-card">
+      <div class="modal-head"><h2 id="updateModalTitle">更新日志</h2><button id="updateModalCloseBtn" type="button" class="btn small ghost">关闭</button></div>
+      <div id="updateModalBody" class="update-modal-body"></div>
+      <div id="updateModalActions" class="confirm-modal-actions hidden">
+        <button id="updateLaterBtn" type="button" class="btn ghost">稍后</button>
+        <button id="installUpdateBtn" type="button" class="btn primary">下载更新</button>
       </div>
     </div>
   </div>

@@ -319,6 +319,10 @@ var (
 )
 
 func showStyledConfirmDialog(title, message string) bool {
+	return showStyledChoiceDialog(title, message, "确定", "取消")
+}
+
+func showStyledChoiceDialog(title, message, confirmText, cancelText string) bool {
 	confirmMu.Lock()
 	if activeConfirm != nil && !activeConfirm.done {
 		if activeConfirm.hwnd != 0 {
@@ -374,7 +378,7 @@ func showStyledConfirmDialog(title, message string) bool {
 		return false
 	}
 	d.hwnd = hwnd
-	createConfirmChildren(hwnd, hInstance, message)
+	createConfirmChildren(hwnd, hInstance, message, confirmText, cancelText)
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
 	procSetForegroundWnd.Call(hwnd)
@@ -395,12 +399,12 @@ func showStyledConfirmDialog(title, message string) bool {
 	}
 }
 
-func createConfirmChildren(hwnd, hInstance uintptr, message string) {
+func createConfirmChildren(hwnd, hInstance uintptr, message, confirmLabel, cancelLabel string) {
 	staticClass, _ := syscall.UTF16PtrFromString("STATIC")
 	buttonClass, _ := syscall.UTF16PtrFromString("BUTTON")
 	msg, _ := syscall.UTF16PtrFromString(message)
-	okText, _ := syscall.UTF16PtrFromString("确定")
-	cancelText, _ := syscall.UTF16PtrFromString("取消")
+	okText, _ := syscall.UTF16PtrFromString(confirmLabel)
+	cancelText, _ := syscall.UTF16PtrFromString(cancelLabel)
 	font, _, _ := procGetStockObject.Call(defaultGuiFont)
 
 	iconCtl, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), 0, wsChild|wsVisible|ssIcon,

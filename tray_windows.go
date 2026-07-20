@@ -34,6 +34,7 @@ const (
 	wmLButtonDblClk    = 0x0203
 
 	mfString    = 0x0000
+	mfChecked   = 0x0008
 	mfSeparator = 0x0800
 
 	tpmRightButton = 0x0002
@@ -77,6 +78,7 @@ const (
 	menuOpenLog         = 1009
 	menuExit            = 1010
 	menuNextQueue       = 1011
+	menuAutoCheckUpdate = 1012
 
 	hotkeyOpenControl     = 2001
 	hotkeyOpenMiniControl = 2002
@@ -170,6 +172,7 @@ type trayApp struct {
 	hwnd              uintptr
 	hIcon             uintptr
 	customIcon        bool
+	iconAdded         bool
 	menuOpen          bool
 	menuPending       bool
 	exiting           atomic.Bool
@@ -200,13 +203,17 @@ func getActiveTray() *trayApp {
 	return t
 }
 
-func runTray(app *App, controller *ServerController, dataDir string) error {
+func runTray(app *App, controller *ServerController, dataDir string, showIcon bool) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	className, _ := syscall.UTF16PtrFromString("BiliQueueTrayWindow")
 	windowName, _ := syscall.UTF16PtrFromString("BiliQueue")
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
-	hIcon, customIcon := loadTrayIcon()
+	var hIcon uintptr
+	var customIcon bool
+	if showIcon {
+		hIcon, customIcon = loadTrayIcon()
+	}
 
 	wc := wndClassEx{
 		cbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
@@ -238,17 +245,24 @@ func runTray(app *App, controller *ServerController, dataDir string) error {
 		hotkeyRequests: make(chan hotkeyReloadRequest, 8),
 	}
 	setActiveTray(t)
-	if err := t.addIcon(); err != nil {
-		setActiveTray(nil)
-		_, _, _ = procDestroyWindow.Call(hwnd)
-		return err
+	if showIcon {
+		if err := t.addIcon(); err != nil {
+			setActiveTray(nil)
+			_, _, _ = procDestroyWindow.Call(hwnd)
+			return err
+		}
+		t.iconAdded = true
 	}
 	app.mu.RLock()
 	hotkeys := app.config.Hotkeys
 	app.mu.RUnlock()
 	app.setHotkeyStatus(t.applyHotkeys(hotkeys))
 	app.broadcast()
-	log.Printf("tray ready")
+	if showIcon {
+		log.Printf("tray and hotkey service ready")
+	} else {
+		log.Printf("hotkey service ready without tray icon")
+	}
 
 	var m msg
 	for {
@@ -359,11 +373,14 @@ func (t *trayApp) addIcon() error {
 
 func (t *trayApp) removeIcon() {
 	t.unregisterHotkeys()
-	var nid notifyIconData
-	nid.cbSize = uint32(unsafe.Sizeof(nid))
-	nid.hWnd = t.hwnd
-	nid.uID = 1
-	procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
+	if t.iconAdded {
+		var nid notifyIconData
+		nid.cbSize = uint32(unsafe.Sizeof(nid))
+		nid.hWnd = t.hwnd
+		nid.uID = 1
+		procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
+		t.iconAdded = false
+	}
 	if t.customIcon && t.hIcon != 0 {
 		procDestroyIcon.Call(t.hIcon)
 		t.hIcon = 0
@@ -396,6 +413,14 @@ func (t *trayApp) showMenu() {
 	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, mfString, menuNextQueue, "下一位")
 	appendMenu(menu, mfString, menuClearQueue, "清空队列")
+	t.app.mu.RLock()
+	autoCheckUpdates := t.app.config.Updates.AutoCheck
+	t.app.mu.RUnlock()
+	updateFlags := uint32(mfString)
+	if autoCheckUpdates {
+		updateFlags |= mfChecked
+	}
+	appendMenu(menu, updateFlags, menuAutoCheckUpdate, "自动检查更新")
 	appendMenu(menu, mfString, menuOpenDataDir, "打开数据文件夹")
 	appendMenu(menu, mfString, menuOpenLog, "打开日志文件")
 	appendMenu(menu, mfSeparator, 0, "")
@@ -440,6 +465,11 @@ func (t *trayApp) handleMenu(id uint16) {
 		if showStyledConfirmDialog("清空队列", "确定清空当前队列吗？此操作无法撤销。") {
 			t.app.clearQueue()
 		}
+	case menuAutoCheckUpdate:
+		t.app.mu.RLock()
+		enabled := t.app.config.Updates.AutoCheck
+		t.app.mu.RUnlock()
+		t.app.setAutoCheckUpdates(!enabled)
 	case menuOpenDataDir:
 		openPath(t.dataDir)
 	case menuOpenLog:
@@ -456,7 +486,7 @@ func (t *trayApp) handleMenu(id uint16) {
 func reloadGlobalHotkeys(cfg HotkeyConfig) map[string]string {
 	t := getActiveTray()
 	if t == nil || t.hwnd == 0 || t.exiting.Load() {
-		return defaultHotkeyStatus("托盘模式未启用")
+		return defaultHotkeyStatus("Windows 快捷键服务未启动")
 	}
 	req := hotkeyReloadRequest{config: cfg, done: make(chan map[string]string, 1)}
 	select {
@@ -501,7 +531,7 @@ func (t *trayApp) applyHotkeys(cfg HotkeyConfig) map[string]string {
 	}
 	bindings := []binding{
 		{key: "openControl", label: "打开控制台网页", value: cfg.OpenControl, id: hotkeyOpenControl},
-		{key: "openMiniControl", label: "打开简易控制页", value: cfg.OpenMiniControl, id: hotkeyOpenMiniControl},
+		{key: "openMiniControl", label: "打开/关闭简易控制页", value: cfg.OpenMiniControl, id: hotkeyOpenMiniControl},
 		{key: "nextQueue", label: "下一位", value: cfg.NextQueue, id: hotkeyNextQueue},
 		{key: "clearQueue", label: "清空队列", value: cfg.ClearQueue, id: hotkeyClearQueue},
 	}
@@ -603,7 +633,9 @@ func (t *trayApp) handleHotkey(id int32) {
 	case hotkeyOpenControl:
 		t.openControl()
 	case hotkeyOpenMiniControl:
-		t.openMiniControl()
+		if err := toggleMiniControlWindow(t.app); err != nil {
+			log.Printf("toggle mini control: %v", err)
+		}
 	case hotkeyNextQueue:
 		t.app.advanceQueue()
 	case hotkeyClearQueue:

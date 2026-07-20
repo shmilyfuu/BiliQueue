@@ -12,6 +12,8 @@ let pageResetTimer = null;
 let pageIndex = 0;
 let renderToken = 0;
 let lastQueueSignature = "";
+let continuousLayout = null;
+let serverRuntimeID = '';
 const isPreview = new URLSearchParams(location.search).has('preview');
 const loadedFonts = new Map();
 const defaultFontStack = 'Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif';
@@ -92,28 +94,46 @@ function fittingText(value, scope, extraClass = '') {
   return `<span class="${classes}" data-full-text="${text}">${text}</span>`;
 }
 
-function avatar(user, enabled, area = 'queue') {
+function avatar(user, enabled, area = 'queue', guardEnabled = true) {
   if (!enabled) return '';
   const label = user?.manual ? '⭐️' : (user?.username || '?').slice(0,1);
   const initial = `<span class="avatar-initial${user?.manual ? ' manual-star' : ''}">${escapeHtml(label)}</span>`;
-  const cls = `avatar ${area === 'current' ? 'current-avatar' : 'queue-avatar'}`;
-  if (user?.avatar) return `<span class="${cls}">${initial}<img src="${escapeHtml(mediaImageURL(user.avatar))}" alt="" onerror="this.remove()"></span>`;
-  return `<span class="${cls}">${initial}</span>`;
+  const cls = `avatar ${area === 'current' ? 'current-avatar' : 'queue-avatar'}${user?.manual ? ' manual-avatar' : ''}`;
+  const guard = guardIcon(user, guardEnabled);
+  if (user?.manual) return `<span class="${cls}">${initial}${guard}</span>`;
+  if (user?.avatar) return `<span class="${cls}">${initial}<img class="avatar-image" src="${escapeHtml(mediaImageURL(user.avatar))}" alt="" onerror="this.remove()">${guard}</span>`;
+  return `<span class="${cls}">${initial}${guard}</span>`;
+}
+function guardIcon(user, enabled) {
+  const icons = {1:['icon_governor.png','总督'],2:['icon_supervisor.png','提督'],3:['icon_captain.png','舰长']};
+  const item = icons[Number(user?.guardLevel || 0)];
+  if (!enabled || !item) return '';
+  return `<img class="guard-icon" src="/assets/${item[0]}" alt="${item[1]}" title="${item[1]}">`;
 }
 function giftMark(user, enabled, scope = 'stroke-queue', area = 'queue') {
-  if (!enabled || !user?.priority) return '';
+  if (!enabled || !hasGift(user)) return '';
   const fallback = strokeText('\u25c6', scope, 'stroke-gift');
   const icon = user.giftIcon
     ? `${fallback}<img src="${escapeHtml(mediaImageURL(user.giftIcon))}" alt="" onerror="this.remove()">`
     : fallback;
   const cls = `gift-mark ${area === 'current' ? 'current-gift-mark' : 'queue-gift-mark'}`;
-  return `<span class="${cls}" title="${escapeHtml(user.giftName || '\u793c\u7269')}">${icon}</span>`;
+  const amount = Number(user.giftBattery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
+  return `<span class="${cls}" title="${escapeHtml(user.giftName || '\u793c\u7269')} · ${amount}电池">${icon}</span>`;
 }
-function chip(user, index, settings) {
-  const classes = `user-chip${user.priority ? ' priority' : ''}`;
-  const content = `<span class="position">${strokeText(String(index).padStart(2,'0'), 'stroke-queue')}</span>${giftMark(user,settings.showGiftIcon,'stroke-queue','queue')}${avatar(user,settings.showAvatar,'queue')}<span class="name">${fittingText(user.username, 'stroke-queue')}</span>`;
-  const priorityBg = user.priority ? '<span class="priority-bg" aria-hidden="true"></span>' : '';
-  return `<div class="${classes}"><span class="chip-main">${priorityBg}${content}</span></div>`;
+function hasGift(user) {
+  return Boolean(user?.hasGift || user?.giftName || user?.giftIcon || Number(user?.giftBattery));
+}
+function giftBatteryMark(user, enabled) {
+  if (!enabled || !hasGift(user)) return '';
+  const amount = Number(user.giftBattery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
+  return `<span class="gift-battery" title="${amount}电池">${strokeText(amount, 'stroke-queue')}<img src="/assets/icon_battery.png" alt="电池"></span>`;
+}
+function chip(user, index, settings, attributes = '') {
+  const gifted = hasGift(user);
+  const classes = `user-chip${gifted ? ' gifted' : ''}${user.priority ? ' priority' : ''}`;
+  const content = `<span class="position">${strokeText(String(index).padStart(2,'0'), 'stroke-queue')}</span>${giftMark(user,settings.showGiftIcon,'stroke-queue','queue')}${avatar(user,settings.showAvatar,'queue',settings.showGuardIcon !== false)}<span class="name">${fittingText(user.username, 'stroke-queue')}</span>${giftBatteryMark(user,settings.showGiftBattery !== false)}`;
+  const giftBg = gifted ? '<span class="gift-bg" aria-hidden="true"></span>' : '';
+  return `<div class="${classes}"${attributes}><span class="chip-main">${giftBg}${content}</span></div>`;
 }
 
 function stopScroll(preserveOffset = false, preservePage = false) {
@@ -123,6 +143,7 @@ function stopScroll(preserveOffset = false, preservePage = false) {
   pageResetTimer = null;
   if (!preservePage) pageIndex = 0;
   if (!preserveOffset) offset = 0;
+  if (!preserveOffset) continuousLayout = null;
   cycleWidth = 0;
   scrolling = false;
   activeTrack = null;
@@ -130,6 +151,11 @@ function stopScroll(preserveOffset = false, preservePage = false) {
 }
 
 function apply(nextState) {
+  if (serverRuntimeID && nextState.runtimeId && nextState.runtimeId !== serverRuntimeID) {
+    location.reload();
+    return;
+  }
+  if (nextState.runtimeId) serverRuntimeID = nextState.runtimeId;
   state = nextState;
   const o = state.config.overlay;
   const root = document.documentElement.style;
@@ -154,6 +180,7 @@ function apply(nextState) {
   root.setProperty('--current-badge-offset-x', `${Math.max(-80, Math.min(80, Number(o.currentBadgeOffsetX ?? -6)))}px`);
   root.setProperty('--current-badge-offset-y', `${Math.max(-80, Math.min(80, Number(o.currentBadgeOffsetY ?? -6)))}px`);
   root.setProperty('--queue-font-size', `${o.queueFontSize}px`);
+  root.setProperty('--gift-battery-size', `${Math.max(8, Math.min(48, Number(o.giftBatterySize ?? 14)))}px`);
   root.setProperty('--queue-text-color', rgba(o.queueTextColor || '#ffffff', o.queueTextOpacity));
   root.setProperty('--queue-text-stroke-width', `${Math.max(0, Math.min(12, Number(o.queueTextStrokeWidth || 0)))}px`);
   root.setProperty('--queue-text-stroke-color', o.queueTextStrokeColor || '#000000');
@@ -204,10 +231,10 @@ function apply(nextState) {
   if (!currentEnabled) {
     $('current').innerHTML = '';
   } else if (current) {
-    const currentAvatar = avatar(current,o.showAvatar,'current');
+    const currentAvatar = avatar(current,o.showAvatar,'current',o.showGuardIcon !== false);
     const badgeText = String(o.currentBadgeText || '当前').trim();
     const avatarWithBadge = currentAvatar ? `<span class="current-avatar-stack">${currentAvatar}${badgeText ? `<span class="current-badge">${escapeHtml(badgeText)}</span>` : ''}</span>` : '';
-    const media = `${avatarWithBadge}${giftMark(current,o.showGiftIcon,'stroke-current','current')}`;
+    const media = `${giftMark(current,o.showGiftIcon,'stroke-current','current')}${avatarWithBadge}`;
     $('current').innerHTML = `<div class="current-user${media ? '' : ' no-media'}">${media ? `<div class="current-media">${media}</div>` : ''}<strong class="current-name">${fittingText(current.username, 'stroke-current')}</strong></div>`;
   } else {
     $('current').innerHTML = `<div class="placeholder">${strokeText(o.emptyText || '排队空闲中', 'stroke-current', 'stroke-block')}</div>`;
@@ -231,13 +258,13 @@ function queueRenderSignature(nextState) {
   const o = nextState.config.overlay || {};
   const waiting = (nextState.queue || []).slice(1).map(user => [
     user.id || '', user.uid || 0, user.username || '', user.avatar || '',
-    user.priority ? 1 : 0, user.giftName || '', user.giftIcon || '', user.giftBattery || 0
+    user.priority ? 1 : 0, user.guardLevel || 0, user.hasGift ? 1 : 0, user.giftName || '', user.giftIcon || '', user.giftBattery || 0, user.priorityGiftBattery || 0
   ]);
   const emptyText = waiting.length ? '' : (o.queueEmptyText || '');
   const keys = {
     waiting, emptyText,
     queueWidth: o.queueWidth, height: o.height, currentEnabled: o.currentEnabled !== false, infoEnabled: o.infoEnabled !== false, queueFontSize: o.queueFontSize, queueFontWeight: o.queueFontWeight, queueFontFile: o.queueFontFile,
-    showAvatar: o.showAvatar, showGiftIcon: o.showGiftIcon, avatarSize: o.avatarSize, currentAvatarSize: o.currentAvatarSize, queueAvatarSize: o.queueAvatarSize, currentAvatarNameGap: o.currentAvatarNameGap, queueAvatarNameGap: o.queueAvatarNameGap,
+    showAvatar: o.showAvatar, showGuardIcon: o.showGuardIcon !== false, showGiftIcon: o.showGiftIcon, showGiftBattery: o.showGiftBattery !== false, giftBatterySize: o.giftBatterySize, avatarSize: o.avatarSize, currentAvatarSize: o.currentAvatarSize, queueAvatarSize: o.queueAvatarSize, currentAvatarNameGap: o.currentAvatarNameGap, queueAvatarNameGap: o.queueAvatarNameGap,
     queueItemGap: o.queueItemGap, queueLineGap: o.queueLineGap, queuePageSize: o.queuePageSize ?? o.queueSecondPageSize,
     doubleLineEnabled: o.doubleLineEnabled, scrollMode: o.scrollMode, speed: o.speed, effectInterval: o.effectInterval, effectDuration: o.effectDuration,
     shortAlign: o.shortAlign, queueTextAlign: o.queueTextAlign, queueTextLineGap: o.queueTextLineGap
@@ -268,14 +295,18 @@ function renderQueueArea() {
   const doubleEnabled = o.doubleLineEnabled !== false;
   const isDouble = doubleEnabled && waiting.length > pageSize;
   const targetTrack = isDouble ? $('scrollTrack') : $('singleTrack');
-  const preserveContinuousOffset = o.scrollMode === 'continuous'
+  const continuousUserCount = isDouble ? Math.max(0, waiting.length - pageSize) : waiting.length;
+  const continuousAnchor = o.scrollMode === 'continuous' ? captureContinuousAnchor() : null;
+  const canUpdateContinuous = o.scrollMode === 'continuous'
+    && continuousUserCount > pageSize
     && activeTrack === targetTrack
-    && activeTrack?.classList.contains('continuous-track');
+    && targetTrack.classList.contains('continuous-track')
+    && continuousLayout?.track === targetTrack;
   const preservePagedPosition = activeTrack === targetTrack && (
     (o.scrollMode === 'paged' && activeTrack?.classList.contains('vertical-pages'))
     || (o.scrollMode === 'fade' && activeTrack?.classList.contains('fade-stack'))
   );
-  stopScroll(preserveContinuousOffset, preservePagedPosition);
+  if (!canUpdateContinuous) stopScroll(false, preservePagedPosition);
   const token = ++renderToken;
   $('singleRow').style.display = isDouble ? 'none' : 'flex';
   $('doubleRows').style.display = isDouble ? 'flex' : 'none';
@@ -291,15 +322,15 @@ function renderQueueArea() {
   }
 
   if (!isDouble) {
-    prepareAnimatedRow($('singleTrack'), $('singleRow'), waiting, 2, o, token);
+    prepareAnimatedRow($('singleTrack'), $('singleRow'), waiting, 2, o, token, continuousAnchor);
     return;
   }
 
-  renderDoubleRows(waiting, o, pageSize, token);
+  renderDoubleRows(waiting, o, pageSize, token, continuousAnchor);
 }
 
 
-function renderDoubleRows(waiting, settings, pageSize, token) {
+function renderDoubleRows(waiting, settings, pageSize, token, continuousAnchor = null) {
   if (token !== renderToken) return;
   const fixedRow = $('fixedRow');
   const scrollRow = $('scrollRow');
@@ -308,6 +339,14 @@ function renderDoubleRows(waiting, settings, pageSize, token) {
   scrollRow?.classList.remove('page-mask', 'double-page-mask');
   scrollTrack.style.transition = 'none';
   scrollTrack.style.opacity = '1';
+  if (settings.scrollMode === 'continuous') {
+    renderContinuousFixedRow(fixedRow, waiting.slice(0, pageSize), 2, settings, pageSize);
+    activeTrack = scrollTrack;
+    activeRow = scrollRow;
+    prepareContinuousGridRow(scrollTrack, scrollRow, waiting.slice(pageSize), 2 + pageSize, settings, token, continuousAnchor);
+    return;
+  }
+
   const pages = buildAlignedPages(fixedRow, waiting, 2, settings, pageSize);
   fixedRow.innerHTML = pages[0] || '';
   scheduleManualEllipsis();
@@ -319,9 +358,7 @@ function renderDoubleRows(waiting, settings, pageSize, token) {
   }
   activeTrack = scrollTrack;
   activeRow = scrollRow;
-  if (settings.scrollMode === 'continuous') {
-    prepareContinuousGridRow(scrollTrack, scrollRow, waiting.slice(pageSize), 2 + pageSize, settings, token);
-  } else if (settings.scrollMode === 'fade') setupFadePages(scrollTrack, secondPages, settings);
+  if (settings.scrollMode === 'fade') setupFadePages(scrollTrack, secondPages, settings);
   else setupVerticalPages(scrollTrack, secondPages, settings);
 
 }
@@ -335,7 +372,7 @@ function prepareStatic(track, html, align) {
   scheduleManualEllipsis();
 }
 
-function prepareAnimatedRow(track, row, users, startIndex, settings, token) {
+function prepareAnimatedRow(track, row, users, startIndex, settings, token, continuousAnchor = null) {
   activeTrack = track;
   activeRow = row;
   row?.classList.remove('page-mask', 'double-page-mask');
@@ -353,7 +390,7 @@ function prepareAnimatedRow(track, row, users, startIndex, settings, token) {
     return;
   }
 
-  prepareContinuousGridRow(track, row, users, startIndex, settings, token);
+  prepareContinuousGridRow(track, row, users, startIndex, settings, token, continuousAnchor);
 }
 
 function continuousGridMetrics(row, settings) {
@@ -369,10 +406,7 @@ function continuousGridMetrics(row, settings) {
 
 function continuousCopyWidth(userCount, metrics) {
   const itemCount = Math.max(0, Number(userCount || 0));
-  const contentWidth = metrics.gap * 2
-    + itemCount * metrics.cellWidth
-    + Math.max(0, itemCount - 1) * metrics.gap;
-  return metrics.pageSidePadding * 2 + Math.max(metrics.gridWidth, contentWidth);
+  return itemCount * (metrics.cellWidth + metrics.gap);
 }
 
 function normalizedContinuousOffset(value, width) {
@@ -383,14 +417,205 @@ function normalizedContinuousOffset(value, width) {
   return next;
 }
 
-function buildContinuousGridCopy(users, startIndex, settings, metrics, hidden = false) {
-  const align = queueAlignClass(settings.shortAlign);
-  const items = users.map((user, index) => chip(user, startIndex + index, settings)).join('');
-  const attrs = hidden ? ' aria-hidden="true"' : '';
-  return `<div class="copy continuous-copy ${align}"${attrs}><div class="continuous-grid" style="--queue-columns:${metrics.columns};--queue-grid-gap:${metrics.gap}px;--queue-cell-width:${metrics.cellWidth}px;--queue-grid-width:${metrics.gridWidth}px;">${items}</div></div>`;
+function continuousUserKey(user) {
+  return String(user?.id || `uid:${user?.uid ?? ''}`);
 }
 
-function prepareContinuousGridRow(track, row, users, startIndex, settings, token) {
+function continuousChipSignature(user, settings) {
+  return JSON.stringify([
+    user?.username || '', user?.avatar || '', user?.manual ? 1 : 0,
+    user?.priority ? 1 : 0, Number(user?.guardLevel || 0), hasGift(user) ? 1 : 0,
+    user?.giftName || '', user?.giftIcon || '', Number(user?.giftBattery || 0),
+    settings.showAvatar ? 1 : 0,
+    settings.showGuardIcon !== false ? 1 : 0,
+    settings.showGiftIcon ? 1 : 0,
+    settings.showGiftBattery !== false ? 1 : 0,
+  ]);
+}
+
+function createKeyedChip(descriptor, settings) {
+  const template = document.createElement('template');
+  template.innerHTML = chip(descriptor.user, descriptor.index, settings, descriptor.hidden ? ' aria-hidden="true"' : '');
+  const node = template.content.firstElementChild;
+  node.dataset.chipKey = descriptor.key;
+  node.dataset.userKey = continuousUserKey(descriptor.user);
+  node.dataset.chipSignature = continuousChipSignature(descriptor.user, settings);
+  node.dataset.queueIndex = String(descriptor.index);
+  return node;
+}
+
+function updateChipPosition(node, index) {
+  if (node.dataset.queueIndex === String(index)) return;
+  node.dataset.queueIndex = String(index);
+  const position = node.querySelector('.position .stroke-wrap');
+  if (position) position.textContent = String(index).padStart(2, '0');
+}
+
+function overlayLayoutScale() {
+  const transform = getComputedStyle($('bar')).transform;
+  if (!transform || transform === 'none') return 1;
+  const values = transform.match(/^matrix\(([^)]+)\)$/)?.[1].split(',');
+  const scale = Number(values?.[0]);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+function rectIntersects(rect, boundary) {
+  return rect.right > boundary.left && rect.left < boundary.right
+    && rect.bottom > boundary.top && rect.top < boundary.bottom;
+}
+
+function animateRemovedChip(node, rect, rowRect, settings) {
+  if (!rectIntersects(rect, rowRect)) return;
+  const scale = overlayLayoutScale();
+  const ghost = node.cloneNode(true);
+  const style = getComputedStyle(node);
+  ghost.classList.add('continuous-removal-ghost');
+  ghost.removeAttribute('data-chip-key');
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  ghost.style.width = `${Math.max(1, node.offsetWidth)}px`;
+  ghost.style.height = `${Math.max(1, node.offsetHeight)}px`;
+  ghost.style.font = style.font;
+  ghost.style.color = style.color;
+  ghost.style.transformOrigin = 'left top';
+  document.body.appendChild(ghost);
+  const distance = Math.max(2, Number(settings.speed || 0) * 0.14);
+  const animation = ghost.animate([
+    {opacity: 1, transform: `scale(${scale}) translateX(0)`},
+    {opacity: 0, transform: `scale(${scale}) translateX(-${distance}px)`},
+  ], {duration: 140, easing: 'ease-out', fill: 'forwards'});
+  animation.finished.catch(() => {}).finally(() => ghost.remove());
+}
+
+function animateRepositionedChips(nodes, oldRects, row) {
+  const rowRect = row.getBoundingClientRect();
+  const scale = overlayLayoutScale();
+  for (const node of nodes) {
+    const oldRect = oldRects.get(node);
+    if (!oldRect) continue;
+    const nextRect = node.getBoundingClientRect();
+    if (!rectIntersects(oldRect, rowRect) && !rectIntersects(nextRect, rowRect)) continue;
+    const delta = (oldRect.left - nextRect.left) / scale;
+    if (Math.abs(delta) < 0.5) continue;
+    node.animate([
+      {transform: `translateX(${delta}px)`},
+      {transform: 'translateX(0)'},
+    ], {duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)'});
+  }
+}
+
+function reconcileKeyedChips(container, descriptors, settings, row, animateChanges = true) {
+  const oldNodes = [...container.children];
+  const oldByKey = new Map(oldNodes.map(node => [node.dataset.chipKey, node]));
+  const oldRects = new Map(oldNodes.map(node => [node, node.getBoundingClientRect()]));
+  const desiredNodes = [];
+  const reusedNodes = [];
+  const freshNodes = [];
+
+  for (const descriptor of descriptors) {
+    const signature = continuousChipSignature(descriptor.user, settings);
+    let node = oldByKey.get(descriptor.key);
+    if (!node || node.dataset.chipSignature !== signature) {
+      node = createKeyedChip(descriptor, settings);
+      freshNodes.push(node);
+    } else {
+      reusedNodes.push(node);
+      updateChipPosition(node, descriptor.index);
+      node.toggleAttribute('aria-hidden', descriptor.hidden);
+    }
+    desiredNodes.push(node);
+  }
+
+  const desiredSet = new Set(desiredNodes);
+  const desiredKeys = new Set(descriptors.map(descriptor => descriptor.key));
+  const rowRect = row.getBoundingClientRect();
+  if (animateChanges) {
+    for (const node of oldNodes) {
+      if (!desiredKeys.has(node.dataset.chipKey)) animateRemovedChip(node, oldRects.get(node), rowRect, settings);
+    }
+  }
+
+  desiredNodes.forEach((node, index) => {
+    const current = container.children[index];
+    if (current !== node) container.insertBefore(node, current || null);
+  });
+  [...container.children].forEach(node => {
+    if (!desiredSet.has(node)) node.remove();
+  });
+  freshNodes.forEach(node => fitManualEllipsis(node));
+
+  return () => {
+    if (animateChanges) animateRepositionedChips(reusedNodes, oldRects, row);
+  };
+}
+
+function continuousDescriptors(users, startIndex, repeats) {
+  const descriptors = [];
+  for (let repeat = 0; repeat < repeats; repeat += 1) {
+    users.forEach((user, index) => descriptors.push({
+      key: `${repeat}:${continuousUserKey(user)}`,
+      user,
+      index: startIndex + index,
+      hidden: repeat > 0,
+    }));
+  }
+  return descriptors;
+}
+
+function renderContinuousFixedRow(row, users, startIndex, settings, columns) {
+  const gap = Math.max(0, Number(settings.queueItemGap ?? 22));
+  const align = queueAlignClass(settings.shortAlign);
+  let page = row.querySelector(':scope > .page-copy');
+  let grid = page?.querySelector(':scope > .aligned-grid');
+  if (!page || !grid) {
+    row.innerHTML = `<div class="page-copy copy ${align}"><div class="aligned-grid fixed-columns"></div></div>`;
+    page = row.firstElementChild;
+    grid = page.firstElementChild;
+  }
+  page.className = `page-copy copy ${align}`;
+  grid.style.setProperty('--queue-columns', String(columns));
+  grid.style.setProperty('--queue-grid-gap', `${gap}px`);
+  const descriptors = users.map((user, index) => ({
+    key: `fixed:${continuousUserKey(user)}`,
+    user,
+    index: startIndex + index,
+    hidden: false,
+  }));
+  const finish = reconcileKeyedChips(grid, descriptors, settings, row, grid.children.length > 0);
+  finish();
+}
+
+function captureContinuousAnchor() {
+  if (!scrolling || !activeTrack?.classList.contains('continuous-track') || !continuousLayout?.ids.length) return null;
+  const {ids, step, inset} = continuousLayout;
+  if (!(step > 0)) return null;
+  const firstLogicalIndex = Math.max(0, Math.floor((-offset - inset) / step));
+  const candidates = [];
+  for (let delta = 0; delta < ids.length; delta += 1) {
+    const logicalIndex = firstLogicalIndex + delta;
+    candidates.push({
+      id: ids[logicalIndex % ids.length],
+      x: inset + offset + logicalIndex * step,
+    });
+  }
+  return {candidates};
+}
+
+function continuousOffsetFromAnchor(anchor, users, metrics, width) {
+  if (!anchor?.candidates?.length || !(width > 0)) return 0;
+  const indexByID = new Map(users.map((user, index) => [continuousUserKey(user), index]));
+  const step = metrics.cellWidth + metrics.gap;
+  const inset = metrics.pageSidePadding + metrics.gap;
+  for (const candidate of anchor.candidates) {
+    const index = indexByID.get(candidate.id);
+    if (index !== undefined) {
+      return normalizedContinuousOffset(candidate.x - inset - index * step, width);
+    }
+  }
+  return 0;
+}
+
+function prepareContinuousGridRow(track, row, users, startIndex, settings, token, anchor = null) {
   row?.classList.remove('page-mask', 'double-page-mask');
   if (activeTrack !== track || token !== renderToken) return;
   if (!users.length) {
@@ -401,22 +626,34 @@ function prepareContinuousGridRow(track, row, users, startIndex, settings, token
     return;
   }
   const metrics = continuousGridMetrics(row, settings);
-  const html = buildContinuousGridCopy(users, startIndex, settings, metrics, false);
-  const copyWidth = continuousCopyWidth(users.length, metrics);
-  cycleWidth = Math.max(1, Math.ceil(copyWidth));
-  scrolling = copyWidth > metrics.rowWidth + 0.5;
-  track.className = 'track continuous-track';
+  scrolling = users.length > metrics.columns;
   track.style.transition = 'none';
   track.style.opacity = '1';
+  track.style.removeProperty('--queue-continuous-inset');
   if (scrolling) {
-    offset = normalizedContinuousOffset(offset, cycleWidth);
-    track.innerHTML = html + buildContinuousGridCopy(users, startIndex, settings, metrics, true);
+    const canReconcile = track.classList.contains('continuous-track')
+      && continuousLayout?.track === track
+      && track.children.length > 0;
+    track.className = 'track continuous-track';
+    const inset = metrics.pageSidePadding + metrics.gap;
+    const step = metrics.cellWidth + metrics.gap;
+    cycleWidth = Math.max(1, continuousCopyWidth(users.length, metrics));
+    track.style.setProperty('--queue-continuous-inset', `${inset}px`);
+    track.style.setProperty('--queue-grid-gap', `${metrics.gap}px`);
+    track.style.setProperty('--queue-cell-width', `${metrics.cellWidth}px`);
+    const repeats = Math.max(3, Math.ceil(metrics.rowWidth / cycleWidth) + 2);
+    const descriptors = continuousDescriptors(users, startIndex, repeats);
+    if (!canReconcile) track.innerHTML = '';
+    const finish = reconcileKeyedChips(track, descriptors, settings, row, canReconcile);
+    offset = continuousOffsetFromAnchor(anchor, users, metrics, cycleWidth);
+    continuousLayout = {ids: users.map(continuousUserKey), step, inset, repeats, track};
     track.style.transform = `translate3d(${offset}px,0,0)`;
+    finish();
   } else {
     offset = 0;
     cycleWidth = 0;
-    track.classList.add(settings.shortAlign === 'left' ? 'short-left' : settings.shortAlign === 'right' ? 'short-right' : 'short-center');
-    track.innerHTML = html;
+    track.className = 'track page-stack';
+    track.innerHTML = buildAlignedPages(row, users, startIndex, settings, metrics.columns)[0] || '';
     track.style.transform = 'translate3d(0,0,0)';
   }
   scheduleManualEllipsis();
@@ -669,16 +906,15 @@ function currentNameAvailableWidth(box, strokeWidth) {
   return Math.max(0, contentWidth - mediaWidth - gap - horizontalPadding - safeInset);
 }
 
-function fitManualEllipsis() {
-  const nodes = document.querySelectorAll('.manual-ellipsis[data-full-text]');
+function fitManualEllipsis(root = document) {
+  const nodes = root.querySelectorAll('.manual-ellipsis[data-full-text]');
   nodes.forEach(node => {
     const full = node.dataset.fullText || '';
     const box = node.closest('.name, .current-name') || node.parentElement;
     if (!box) {
-      node.textContent = full;
+      if (node.textContent !== full) node.textContent = full;
       return;
     }
-    node.textContent = full;
     const style = getComputedStyle(node);
     const boxStyle = getComputedStyle(box);
     const strokeWidth = parsePx(style.getPropertyValue('--stroke-width')) || parsePx(boxStyle.getPropertyValue('--stroke-width')) || 0;
@@ -692,7 +928,11 @@ function fitManualEllipsis() {
       available = Math.max(0, rawWidth - horizontalPadding - safeInset);
     }
     const font = elementFont(style);
-    node.textContent = truncateToWidth(full, available, font);
+    const fitKey = `${full}\n${Math.round(available * 100) / 100}\n${font}`;
+    if (node.dataset.fitKey === fitKey) return;
+    const fitted = truncateToWidth(full, available, font);
+    if (node.textContent !== fitted) node.textContent = fitted;
+    node.dataset.fitKey = fitKey;
   });
 }
 
@@ -700,8 +940,7 @@ function animate(now) {
   const dt = Math.min(.1, (now - lastTime) / 1000);
   lastTime = now;
   if (state && activeTrack && scrolling && state.config.overlay.scrollMode === 'continuous' && cycleWidth > 0) {
-    offset -= Number(state.config.overlay.speed || 0) * dt;
-    if (-offset >= cycleWidth) offset += cycleWidth;
+    offset = normalizedContinuousOffset(offset - Number(state.config.overlay.speed || 0) * dt, cycleWidth);
     activeTrack.style.transform = `translate3d(${offset}px,0,0)`;
   }
   requestAnimationFrame(animate);

@@ -13,6 +13,10 @@ let configWriteChain = Promise.resolve();
 let recordingHotkey = null;
 let hotkeyValues = {openControl:'', openMiniControl:'', nextQueue:'', clearQueue:''};
 let pendingHotkeys = null;
+let updateCandidate = null;
+let updateModalPhase = 'info';
+let scrollGuard = null;
+let scrollGuardTimer = null;
 
 const deferredTextIds = ['emptyText', 'queueEmptyText', 'infoText'];
 const deferredTextMirrors = {
@@ -32,7 +36,7 @@ const DEFAULT_OVERLAY = {
   infoFontSize:18,infoTextColor:'#ffffff',infoTextOpacity:1,infoTextStrokeWidth:0,infoTextStrokeColor:'#000000',infoFontFile:'',infoFontWeight:500,infoTextAlign:'left',
   speed:40,effectInterval:4,effectDuration:.42,background:'#000000',gradientTopOpacity:.45,gradientBottomOpacity:.45,gradientStart:0,gradientEnd:100,avatarSize:32,currentAvatarSize:32,queueAvatarSize:32,currentAvatarNameGap:12,queueAvatarNameGap:10,
   currentBackground:'#ffffff',currentBackgroundOpacity:.07,queueBackground:'#000000',queueBackgroundOpacity:0,infoBackground:'#ffffff',infoBackgroundOpacity:.05,radius:16,
-  showAvatar:true,showCount:true,showRules:true,showGiftIcon:true,currentEnabled:true,infoEnabled:true,
+  showAvatar:true,showGuardIcon:true,showCount:true,showRules:true,showGiftIcon:true,showGiftBattery:true,giftBatterySize:14,currentEnabled:true,infoEnabled:true,
   scrollMode:'continuous',shortAlign:'center',currentWidth:300,currentSidePadding:20,queueWidth:1220,infoWidth:400,
   queueLineGap:8,queueItemGap:22,queuePageSize:5,infoLineGap:4,doubleLineEnabled:true,
   infoText:'弹幕发送“排队”加入\n达到礼物门槛可进入优先队列',emptyText:'排队空闲中',queueEmptyText:'空'
@@ -40,7 +44,7 @@ const DEFAULT_OVERLAY = {
 
 const RESET_GROUPS = {
   banner: ['height','radius','currentEnabled','currentWidth','queueWidth','infoEnabled','infoWidth','background','gradientTopOpacity','gradientBottomOpacity','gradientStart','gradientEnd'],
-  queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','doubleLineEnabled','queueLineGap','queueItemGap','queuePageSize','showAvatar','showGiftIcon'],
+  queueStyle: ['scrollMode','shortAlign','speed','effectInterval','effectDuration','doubleLineEnabled','queueLineGap','queueItemGap','queuePageSize','giftBatterySize','showAvatar','showGuardIcon','showGiftIcon','showGiftBattery'],
   currentArea: ['currentFontSize','currentTextColor','currentTextOpacity','currentTextStrokeWidth','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentTextLineGap','currentSidePadding','currentAvatarSize','currentAvatarNameGap','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOpacity','currentBadgeFontSize','currentBadgeRadius','currentBadgeOffsetX','currentBadgeOffsetY','currentBackground','currentBackgroundOpacity'],
   queueArea: ['queueFontSize','queueTextColor','queueTextOpacity','queueTextStrokeWidth','queueTextStrokeColor','queueFontFile','queueFontWeight','queueTextAlign','queueTextLineGap','queueAvatarSize','queueAvatarNameGap','queueBackground','queueBackgroundOpacity'],
   infoArea: ['infoFontSize','infoTextColor','infoTextOpacity','infoTextStrokeWidth','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','infoLineGap','infoBackground','infoBackgroundOpacity'],
@@ -106,6 +110,7 @@ const numericPairs = {
   queueLineGap: 'queueLineGapValue',
   queueItemGap: 'queueItemGapValue',
   queuePageSize: 'queuePageSizeValue',
+  giftBatterySize: 'giftBatterySizeValue',
   infoLineGap: 'infoLineGapValue',
 };
 
@@ -133,6 +138,50 @@ function queueConfigWrite(operation) {
   const result = configWriteChain.catch(() => {}).then(operation);
   configWriteChain = result.catch(() => {});
   return result;
+}
+
+function documentMaxScrollY() {
+  const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
+  return Math.max(0, height - window.innerHeight);
+}
+
+function beginScrollGuard() {
+  if (scrollGuard) {
+    clearTimeout(scrollGuardTimer);
+    scrollGuardTimer = null;
+    return;
+  }
+  const maxY = documentMaxScrollY();
+  const bottomOffset = Math.max(0, maxY - window.scrollY);
+  scrollGuard = {
+    x: window.scrollX,
+    y: window.scrollY,
+    bottomOffset,
+    stickToBottom: bottomOffset <= 2,
+  };
+  clearTimeout(scrollGuardTimer);
+  scrollGuardTimer = null;
+}
+
+function restoreScrollGuard() {
+  if (!scrollGuard) return;
+  const maxY = documentMaxScrollY();
+  const y = scrollGuard.stickToBottom
+    ? Math.max(0, maxY - scrollGuard.bottomOffset)
+    : Math.min(scrollGuard.y, maxY);
+  if (window.scrollX !== scrollGuard.x || Math.abs(window.scrollY - y) > 0.5) {
+    window.scrollTo(scrollGuard.x, y);
+  }
+}
+
+function finishScrollGuard() {
+  if (!scrollGuard) return;
+  clearTimeout(scrollGuardTimer);
+  scrollGuardTimer = setTimeout(() => {
+    restoreScrollGuard();
+    scrollGuard = null;
+    scrollGuardTimer = null;
+  }, 500);
 }
 
 
@@ -359,19 +408,34 @@ function syncCardHeights() {
 }
 
 function avatarHTML(user) {
-  const initial = escapeHtml((user?.username || '?').slice(0, 1));
+  const manual = Boolean(user?.manual);
+  const initial = manual ? '⭐️' : escapeHtml((user?.username || '?').slice(0, 1));
+  const avatarClass = `avatar${manual ? ' manual-avatar' : ''}`;
+  const guard = guardIconHTML(user);
+  if (manual) return `<span class="${avatarClass}">${initial}${guard}</span>`;
   if (user?.avatar) {
     const src = escapeHtml(mediaImageURL(user.avatar));
-    return `<span class="avatar">${initial}<img src="${src}" alt="" onerror="this.remove()"></span>`;
+    return `<span class="${avatarClass}">${initial}<img class="avatar-image" src="${src}" alt="" onerror="this.remove()">${guard}</span>`;
   }
-  return `<span class="avatar">${initial}</span>`;
+  return `<span class="${avatarClass}">${initial}${guard}</span>`;
+}
+
+function guardIconHTML(user) {
+  const icons = {1:['icon_governor.png','总督'],2:['icon_supervisor.png','提督'],3:['icon_captain.png','舰长']};
+  const item = icons[Number(user?.guardLevel || 0)];
+  if (!item) return '';
+  return `<img class="guard-icon" src="/assets/${item[0]}" alt="${item[1]}" title="${item[1]}">`;
 }
 
 function giftHTML(user) {
-  if (!user?.priority) return '';
+  if (!hasGift(user)) return '';
   const icon = user.giftIcon ? `<span class="gift-icon">◆<img src="${escapeHtml(mediaImageURL(user.giftIcon))}" alt="" onerror="this.remove()"></span>` : '<span>◆</span>';
   const amount = Number(user.giftBattery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
   return `<span class="gift-badge" title="${escapeHtml(user.giftName || '礼物')} · ${amount}电池">${icon}<b>${escapeHtml(user.giftName || '礼物')}</b><em>${amount}电池</em></span>`;
+}
+
+function hasGift(user) {
+  return Boolean(user?.hasGift || user?.giftName || user?.giftIcon || Number(user?.giftBattery));
 }
 
 function renderHotkeys(config = {}, status = {}) {
@@ -467,6 +531,11 @@ function render(nextState) {
   state = nextState;
   const cfg = state.config;
   const status = state.connectionStatus || 'disconnected';
+	const updateStatus = state.updateStatus || {};
+	if ($('checkUpdateBtn')) {
+		$('checkUpdateBtn').disabled = Boolean(updateStatus.checking || updateStatus.downloading || updateStatus.installing);
+		$('checkUpdateBtn').textContent = updateStatus.installing ? '正在更新' : (updateStatus.downloading ? '正在下载' : (updateStatus.checking ? '正在检查' : '检查更新'));
+	}
   $('statusPill').className = `status-pill ${status}`;
   const labels = {connected:'已连接',connecting:'正在连接',reconnecting:'正在重连',error:'连接失败',disconnected:'未连接'};
   $('statusText').textContent = labels[status] || status;
@@ -494,7 +563,10 @@ function render(nextState) {
   renderQueue();
   renderLogs();
   fillSettings(cfg, firstRender);
-  requestAnimationFrame(syncCardHeights);
+  requestAnimationFrame(() => {
+    syncCardHeights();
+    if (scrollGuard) requestAnimationFrame(restoreScrollGuard);
+  });
 }
 
 function renderCurrent() {
@@ -514,6 +586,29 @@ async function submitQueueOrder(ids) {
   try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
 }
 
+function queueDropTarget(list, itemSelector, clientY) {
+  const items = [...list.querySelectorAll(itemSelector)].filter(item => item.dataset.id !== dragId);
+  if (!items.length) return null;
+  const before = items.find(item => {
+    const rect = item.getBoundingClientRect();
+    return clientY < rect.top + rect.height / 2;
+  });
+  return before ? {node:before, after:false} : {node:items[items.length - 1], after:true};
+}
+
+async function dropQueueUser(list, itemSelector, clientY) {
+  const destination = queueDropTarget(list, itemSelector, clientY);
+  if (!dragId || !destination) return clearDropIndicators();
+  const ids = state.queue.map(user => user.id);
+  const from = ids.indexOf(dragId);
+  if (from < 0) return clearDropIndicators();
+  ids.splice(from, 1);
+  const target = ids.indexOf(destination.node.dataset.id);
+  ids.splice(target + (destination.after ? 1 : 0), 0, dragId);
+  clearDropIndicators();
+  await submitQueueOrder(ids);
+}
+
 function renderQueue() {
   const list = $('queueList');
   if (selectedQueueUserId && !state.queue.some(user => user.id === selectedQueueUserId)) {
@@ -524,13 +619,27 @@ function renderQueue() {
     return;
   }
   list.innerHTML = state.queue.map((user, index) => `
-    <div class="queue-item${user.priority ? ' priority' : ''}${user.id === selectedQueueUserId ? ' is-selected' : ''}" draggable="true" data-id="${escapeHtml(user.id)}" role="button" tabindex="0" aria-pressed="${user.id === selectedQueueUserId}">
+    <div class="queue-item${hasGift(user) ? ' gifted' : ''}${user.priority ? ' priority' : ''}${user.id === selectedQueueUserId ? ' is-selected' : ''}" draggable="true" data-id="${escapeHtml(user.id)}" role="button" tabindex="0" aria-pressed="${user.id === selectedQueueUserId}">
       <span class="drag-handle" title="\u62d6\u52a8\u8c03\u6574\u987a\u5e8f" aria-hidden="true">\u2261</span>
       <div class="position">${String(index + 1).padStart(2, '0')}</div>
       <div class="queue-user">${avatarHTML(user)}<div class="queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '\u624b\u52a8\u6dfb\u52a0' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
       ${giftHTML(user)}
       <div class="queue-actions"><button class="btn small danger" data-remove="${escapeHtml(user.id)}">\u79fb\u9664</button></div>
     </div>`).join('');
+
+  list.ondragover = event => {
+    if (!dragId) return;
+    event.preventDefault();
+    clearDropIndicators();
+    const destination = queueDropTarget(list, '.queue-item', event.clientY);
+    destination?.node.classList.add(destination.after ? 'drop-after' : 'drop-before');
+    event.dataTransfer.dropEffect = 'move';
+  };
+  list.ondrop = event => {
+    if (!dragId) return;
+    event.preventDefault();
+    dropQueueUser(list, '.queue-item', event.clientY);
+  };
 
   list.querySelectorAll('.queue-item').forEach(node => {
     const toggleSelected = () => {
@@ -557,31 +666,6 @@ function renderQueue() {
       dragId = null;
       clearDropIndicators();
     });
-    node.addEventListener('dragover', event => {
-      event.preventDefault();
-      if (!dragId || dragId === node.dataset.id) return;
-      clearDropIndicators();
-      const rect = node.getBoundingClientRect();
-      node.classList.add(event.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
-      event.dataTransfer.dropEffect = 'move';
-    });
-    node.addEventListener('dragleave', event => {
-      if (!node.contains(event.relatedTarget)) node.classList.remove('drop-before','drop-after');
-    });
-    node.addEventListener('drop', async event => {
-      event.preventDefault();
-      const targetId = node.dataset.id;
-      if (!dragId || dragId === targetId) return clearDropIndicators();
-      const after = node.classList.contains('drop-after');
-      const ids = state.queue.map(user => user.id);
-      const from = ids.indexOf(dragId);
-      if (from < 0) return clearDropIndicators();
-      ids.splice(from, 1);
-      const target = ids.indexOf(targetId);
-      ids.splice(target + (after ? 1 : 0), 0, dragId);
-      clearDropIndicators();
-      await submitQueueOrder(ids);
-    });
   });
   list.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', async () => {
     try { await api('/api/queue/remove', {body:{id:btn.dataset.remove}}); } catch (err) { toast(err.message); }
@@ -597,9 +681,14 @@ function renderLogs() {
     return;
   }
   const amount = Number(gift.battery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
-  const eligible = gift.coinType === 'gold' && gift.battery >= state.config.giftPriority.thresholdBattery && state.config.giftPriority.enabled;
+  const priorityEligible = gift.coinType === 'gold' && gift.battery >= state.config.giftPriority.thresholdBattery && state.config.giftPriority.enabled;
+  const queueEligible = gift.coinType === 'gold' && gift.battery >= state.config.giftPriority.queueThresholdBattery && state.config.giftPriority.paidQueueEnabled;
   const queuedPriority = state.queue.some(user => Number(user.uid) === Number(gift.uid) && user.priority);
-  const result = eligible ? (queuedPriority ? '，已触发插队' : '，送礼用户未在队列中，仅记录') : '';
+  const queued = state.queue.some(user => Number(user.uid) === Number(gift.uid));
+  let result = '';
+  if (priorityEligible && queuedPriority) result = '，已触发插队';
+  else if (queueEligible && queued) result = '，已达到礼物排队门槛';
+  else if (priorityEligible && !queued) result = '，送礼用户未在队列中，仅记录';
   $('lastGift').textContent = `最近礼物：${gift.username} 送出 ${gift.giftName} × ${gift.num}，约 ${amount} 电池${result}`;
 }
 
@@ -618,9 +707,15 @@ function fillSettings(cfg, force) {
     if (force || document.activeElement !== $(id)) $(id).value = cfg[id];
   }
   if (force || document.activeElement !== $('giftThresholdBattery')) $('giftThresholdBattery').value = cfg.giftPriority?.thresholdBattery ?? 100;
+  if (force || document.activeElement !== $('giftQueueThresholdBattery')) $('giftQueueThresholdBattery').value = cfg.giftPriority?.queueThresholdBattery ?? 100;
+  if (force || document.activeElement !== $('fanMedalLevel')) $('fanMedalLevel').value = cfg.eligibility?.fanMedalLevel ?? 1;
   if ($('queueEnabled')) $('queueEnabled').value = cfg.queueEnabled === false ? 'false' : 'true';
+  $('paidGiftQueueEnabled').checked = Boolean(cfg.giftPriority?.paidQueueEnabled);
   $('giftPriorityEnabled').checked = Boolean(cfg.giftPriority?.enabled);
   $('giftSortByValue').checked = Boolean(cfg.giftPriority?.sortByValue);
+  $('fanMedalQueueEnabled').checked = Boolean(cfg.eligibility?.fanMedalEnabled);
+  $('guardQueueEnabled').checked = Boolean(cfg.eligibility?.guardEnabled);
+  $('guardPriorityEnabled').checked = Boolean(cfg.eligibility?.guardPriorityEnabled);
 
   const o = cfg.overlay;
   setPair('height', o.height, force);
@@ -662,6 +757,7 @@ function fillSettings(cfg, force) {
   setPair('queueLineGap', o.queueLineGap, force);
   setPair('queueItemGap', o.queueItemGap ?? 22, force);
   setPair('queuePageSize', o.queuePageSize ?? o.queueSecondPageSize ?? 5, force);
+  setPair('giftBatterySize', o.giftBatterySize ?? 14, force);
   setPair('infoLineGap', o.infoLineGap, force);
 
   const plain = {
@@ -717,9 +813,11 @@ function fillSettings(cfg, force) {
   if ($('currentEnabled')) $('currentEnabled').checked = o.currentEnabled !== false;
   if ($('infoEnabled')) $('infoEnabled').checked = o.infoEnabled !== false;
   $('showAvatar').checked = Boolean(o.showAvatar);
+  $('showGuardIcon').checked = o.showGuardIcon !== false;
   $('showCount').checked = Boolean(o.showCount);
   $('showRules').checked = Boolean(o.showRules);
   $('showGiftIcon').checked = Boolean(o.showGiftIcon);
+  $('showGiftBattery').checked = o.showGiftBattery !== false;
   if ($('doubleLineEnabled')) $('doubleLineEnabled').checked = o.doubleLineEnabled !== false;
   syncQueueStyleModeControls();
   updateSizeHint();
@@ -737,7 +835,7 @@ function collectConfig(options = {}) {
   const includeTextDrafts = Boolean(options.includeTextDrafts);
   const currentOverlay = state?.config?.overlay || {};
   return {
-    schemaVersion: Number(state?.config?.schemaVersion) || 13,
+    schemaVersion: Number(state?.config?.schemaVersion) || 16,
     listenAddress: state?.config?.listenAddress || location.host,
     roomId: state?.config?.roomId || $('roomId').value.trim(),
     queueEnabled: $('queueEnabled')?.value !== 'false',
@@ -750,8 +848,17 @@ function collectConfig(options = {}) {
       enabled: $('giftPriorityEnabled').checked,
       thresholdBattery: Number($('giftThresholdBattery').value) || 100,
       sortByValue: $('giftSortByValue').checked,
+      paidQueueEnabled: $('paidGiftQueueEnabled').checked,
+      queueThresholdBattery: Number($('giftQueueThresholdBattery').value) || 100,
+    },
+    eligibility: {
+      fanMedalEnabled: $('fanMedalQueueEnabled').checked,
+      fanMedalLevel: Number($('fanMedalLevel').value) || 1,
+      guardEnabled: $('guardQueueEnabled').checked,
+      guardPriorityEnabled: $('guardPriorityEnabled').checked,
     },
     hotkeys: {...hotkeyValues},
+    updates: {...(state?.config?.updates || {autoCheck:true})},
     overlay: {
       height: Number($('height').value),
       fontSize: Number($('queueFontSize').value),
@@ -812,9 +919,12 @@ function collectConfig(options = {}) {
       currentEnabled: $('currentEnabled') ? $('currentEnabled').checked : true,
       infoEnabled: $('infoEnabled') ? $('infoEnabled').checked : true,
       showAvatar: $('showAvatar').checked,
+      showGuardIcon: $('showGuardIcon').checked,
       showCount: $('showCount').checked,
       showRules: $('showRules').checked,
       showGiftIcon: $('showGiftIcon').checked,
+      showGiftBattery: $('showGiftBattery').checked,
+      giftBatterySize: Number($('giftBatterySize').value),
       scrollMode: $('scrollMode').value,
       shortAlign: $('shortAlign').value,
       currentWidth: Number($('currentWidth').value),
@@ -853,7 +963,10 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     saveTimer = null;
     const config = collectConfig({includeTextDrafts:false});
-    queueConfigWrite(() => api('/api/config', {body:config})).catch(err => toast(err.message));
+    const preserveScroll = Boolean(scrollGuard);
+    queueConfigWrite(() => api('/api/config', {body:config}))
+      .catch(err => toast(err.message))
+      .finally(() => { if (preserveScroll) finishScrollGuard(); });
   }, 180);
 }
 
@@ -1078,12 +1191,20 @@ function bindTextQuickControls() {
     stepper.querySelectorAll('button').forEach(button => {
       let timer = null;
       const run = () => {
+        beginScrollGuard();
         const step = Number(target.step || 1) || 1;
         const current = Number(number.value || target.value || target.min || 0) || 0;
         setTextQuickMetric(control, current + Number(button.dataset.step) * step);
+        requestAnimationFrame(restoreScrollGuard);
       };
-      button.addEventListener('click', run);
-      button.addEventListener('mousedown', () => { timer = setInterval(run, 140); });
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        run();
+      });
+      button.addEventListener('mousedown', event => {
+        event.preventDefault();
+        timer = setInterval(run, 140);
+      });
       window.addEventListener('mouseup', () => { if (timer) clearInterval(timer); timer = null; });
     });
     target.addEventListener('input', syncTextQuickControlsFromTargets);
@@ -1210,6 +1331,65 @@ async function changeListenAddress() {
   }
 }
 
+function closeUpdateModal() {
+  $('updateModal').classList.add('hidden');
+  updateCandidate = null;
+  updateModalPhase = 'info';
+}
+
+function setUpdateModalPhase(phase) {
+  updateModalPhase = phase;
+  const hasActions = phase === 'download' || phase === 'ready';
+  $('updateModalActions').classList.toggle('hidden', !hasActions);
+  $('updateLaterBtn').textContent = phase === 'ready' ? '下次启动时更新' : '稍后';
+  $('installUpdateBtn').textContent = phase === 'ready' ? '立即更新' : '下载更新';
+  $('updateLaterBtn').disabled = false;
+  $('installUpdateBtn').disabled = false;
+}
+
+function showUpdateModal({title, body, candidate = null, phase = candidate ? 'download' : 'info'}) {
+  updateCandidate = candidate;
+  $('updateModalTitle').textContent = title;
+  $('updateModalBody').textContent = body;
+  setUpdateModalPhase(phase);
+  $('updateModal').classList.remove('hidden');
+  requestAnimationFrame(() => (phase === 'download' || phase === 'ready' ? $('installUpdateBtn') : $('updateModalCloseBtn')).focus({preventScroll:true}));
+}
+
+async function showLatestReleaseNotes() {
+  try {
+    const result = await api('/api/update/notes', {method:'GET'});
+    showUpdateModal({title:`v${displayVersion(result.version)} 更新日志`, body:result.notes || '暂无更新日志。'});
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+async function checkForUpdate() {
+  const button = $('checkUpdateBtn');
+  button.disabled = true;
+  button.textContent = '正在检查';
+  try {
+    const result = await api('/api/update/check');
+    if (!result.available) {
+      showUpdateModal({title:'检查更新', body:`当前已是最新版本。\n\n当前版本：v${displayVersion(state.version)}\n远端最新版本：v${result.version}\n检查来源：${result.source}`});
+      return;
+    }
+    const notes = result.notes || '该版本暂未提供更新日志。';
+    showUpdateModal({
+      title:`发现新版本 v${result.version}`,
+      body:`检查来源：${result.source}\n\n${notes}`,
+      candidate:result,
+      phase: state.updateStatus?.preparedVersion === result.version ? 'ready' : 'download',
+    });
+  } catch (err) {
+    await showAppAlert({title:'检查更新失败', message:err.message});
+  } finally {
+    button.disabled = false;
+    button.textContent = '检查更新';
+  }
+}
+
 async function init() {
   initCollapsibles();
   window.addEventListener('resize', syncCardHeights);
@@ -1246,6 +1426,54 @@ async function init() {
   source.onerror = () => $('connectionDetail').textContent = '控制台与本机服务的事件流已中断，浏览器会自动尝试恢复';
 
   $('loginBtn').addEventListener('click', startQrLogin);
+	$('releaseNotesBtn').addEventListener('click', showLatestReleaseNotes);
+	$('checkUpdateBtn').addEventListener('click', checkForUpdate);
+	$('updateModalCloseBtn').addEventListener('click', closeUpdateModal);
+	$('updateLaterBtn').addEventListener('click', async () => {
+		if (updateModalPhase !== 'ready') {
+			closeUpdateModal();
+			return;
+		}
+		const button = $('updateLaterBtn');
+		button.disabled = true;
+		$('installUpdateBtn').disabled = true;
+		try {
+			const result = await api('/api/update/defer');
+			updateCandidate = null;
+			setUpdateModalPhase('info');
+			$('updateModalBody').textContent = `v${result.version} 已准备好，将在下次启动 BiliQueue 时安装。当前直播不会受到影响。`;
+		} catch (err) {
+			button.disabled = false;
+			$('installUpdateBtn').disabled = false;
+			await showAppAlert({title:'更新失败', message:err.message});
+		}
+	});
+	$('updateModal').addEventListener('click', event => { if (event.target === $('updateModal')) closeUpdateModal(); });
+	$('installUpdateBtn').addEventListener('click', async () => {
+		if (!updateCandidate) return;
+		const button = $('installUpdateBtn');
+		button.disabled = true;
+		$('updateLaterBtn').disabled = true;
+		try {
+			if (updateModalPhase === 'download') {
+				button.textContent = '正在下载';
+				const result = await api('/api/update/download');
+				setUpdateModalPhase('ready');
+				$('updateModalBody').textContent = `v${result.version} 更新包已下载并解压完成。\n\n请选择立即更新，或安排在下次启动 BiliQueue 时更新。`;
+				return;
+			}
+			button.textContent = '正在更新';
+			await api('/api/update/apply');
+			updateCandidate = null;
+			setUpdateModalPhase('info');
+			$('updateModalBody').textContent = 'BiliQueue 正在退出、替换并重新启动。';
+		} catch (err) {
+			button.disabled = false;
+			button.textContent = updateModalPhase === 'ready' ? '立即更新' : '下载更新';
+			$('updateLaterBtn').disabled = false;
+			await showAppAlert({title:'更新失败', message:err.message});
+		}
+	});
   $('refreshQrBtn').addEventListener('click', startQrLogin);
   $('closeQrBtn').addEventListener('click', () => { stopQrPolling(); $('qrModal').classList.add('hidden'); });
   $('qrModal').addEventListener('click', event => { if (event.target === $('qrModal')) { stopQrPolling(); $('qrModal').classList.add('hidden'); } });
@@ -1288,19 +1516,20 @@ async function init() {
   });
   $('mockGiftBtn').addEventListener('click', async () => {
     const selected = selectedQueueUserId ? state.queue.find(user => user.id === selectedQueueUserId) : null;
-    const ordinary = selected || state.queue.slice(1).reverse().find(user => !user.priority);
-    const uid = ordinary?.uid || Date.now() + mockCounter;
-    const username = ordinary?.username || `礼物用户${String(mockCounter++).padStart(2,'0')}`;
+    if (!selected) {
+      await showAppAlert({title:'模拟礼物', message:'请先选中要添加礼物的用户。'});
+      return;
+    }
     const rawBattery = $('mockGiftBattery').value.trim();
     const battery = rawBattery === '' ? Number(state.config.giftPriority.thresholdBattery) : Number(rawBattery);
     if (!Number.isFinite(battery) || battery <= 0) return toast('礼物价值需要是大于 0 的数字');
-    try { await api('/api/debug/gift', {body:{uid,username,giftName:'测试礼物',battery}}); } catch (err) { toast(err.message); }
+    try { await api('/api/debug/gift', {body:{queueUserId:selected.id,giftName:'测试礼物',battery}}); } catch (err) { toast(err.message); }
   });
   $('mockGiftBattery').addEventListener('keydown', event => {
     if (event.key === 'Enter') $('mockGiftBtn').click();
   });
 
-  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftThresholdBattery','giftPriorityEnabled','giftSortByValue','background','currentEnabled','infoEnabled','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','queueTextAlign','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showCount','showRules','showGiftIcon','doubleLineEnabled'];
+  const settingIds = ['queueEnabled','joinCommand','cancelCommand','clearCommand','nextCommand','maxQueue','giftQueueThresholdBattery','giftThresholdBattery','fanMedalLevel','paidGiftQueueEnabled','guardPriorityEnabled','giftPriorityEnabled','giftSortByValue','fanMedalQueueEnabled','guardQueueEnabled','background','currentEnabled','infoEnabled','currentBackground','queueBackground','infoBackground','scrollMode','shortAlign','currentTextColor','currentTextStrokeColor','currentFontFile','currentFontWeight','currentTextAlign','currentBadgeText','currentBadgeTextColor','currentBadgeBackground','currentBadgeOffsetX','currentBadgeOffsetY','queueTextColor','queueTextStrokeColor','queueFontFile','queueFontWeight','queueTextAlign','infoTextColor','infoTextStrokeColor','infoFontFile','infoFontWeight','infoTextAlign','showAvatar','showGuardIcon','showCount','showRules','showGiftIcon','showGiftBattery','doubleLineEnabled'];
   settingIds.forEach(id => $(id).addEventListener('input', () => { scheduleSave(); syncTextQuickControlsFromTargets(); }));
   settingIds.forEach(id => $(id).addEventListener('change', () => { scheduleSave(); syncTextQuickControlsFromTargets(); }));
   $('scrollMode').addEventListener('change', syncQueueStyleModeControls);

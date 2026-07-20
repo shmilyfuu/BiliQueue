@@ -47,18 +47,33 @@ function mediaImageURL(raw) {
 }
 
 function avatarHTML(user) {
-  const initial = escapeHtml((user?.username || '?').slice(0, 1));
+  const manual = Boolean(user?.manual);
+  const initial = manual ? '⭐️' : escapeHtml((user?.username || '?').slice(0, 1));
+  const avatarClass = `avatar${manual ? ' manual-avatar' : ''}`;
+  const guard = guardIconHTML(user);
+  if (manual) return `<span class="${avatarClass}">${initial}${guard}</span>`;
   if (user?.avatar) {
     const src = escapeHtml(mediaImageURL(user.avatar));
-    return `<span class="avatar">${initial}<img src="${src}" alt="" onerror="this.remove()"></span>`;
+    return `<span class="${avatarClass}">${initial}<img class="avatar-image" src="${src}" alt="" onerror="this.remove()">${guard}</span>`;
   }
-  return `<span class="avatar">${initial}</span>`;
+  return `<span class="${avatarClass}">${initial}${guard}</span>`;
+}
+
+function guardIconHTML(user) {
+  const icons = {1:['icon_governor.png','总督'],2:['icon_supervisor.png','提督'],3:['icon_captain.png','舰长']};
+  const item = icons[Number(user?.guardLevel || 0)];
+  if (!item) return '';
+  return `<img class="guard-icon" src="/assets/${item[0]}" alt="${item[1]}" title="${item[1]}">`;
 }
 
 function giftHTML(user) {
-  if (!user?.priority) return '';
+  if (!hasGift(user)) return '';
   const amount = Number(user.giftBattery || 0).toLocaleString('zh-CN', {maximumFractionDigits:2});
   return `<span class="mini-gift-battery" title="${escapeHtml(user.giftName || '礼物')}">${amount}电池</span>`;
+}
+
+function hasGift(user) {
+  return Boolean(user?.hasGift || user?.giftName || user?.giftIcon || Number(user?.giftBattery));
 }
 
 function render(next) {
@@ -70,19 +85,7 @@ function render(next) {
   $('queueCount').textContent = `${state.queue.length} 人`;
   $('pauseBtn').textContent = state.paused ? '继续排队' : '暂停排队';
   $('nextBtn').disabled = state.queue.length === 0;
-  $('skipBtn').disabled = state.queue.length < 2;
-  renderCurrent();
   renderQueue();
-}
-
-function renderCurrent() {
-  const user = state.queue[0];
-  $('currentCard').classList.toggle('is-empty', !user);
-  if (!user) {
-    $('currentCard').innerHTML = `<div class="mini-current-copy"><small>当前用户</small><strong>${escapeHtml(state.config.overlay.emptyText || '排队空闲中')}</strong></div>`;
-    return;
-  }
-  $('currentCard').innerHTML = `${avatarHTML(user)}<div class="mini-current-copy"><small>当前用户 · 第 1 位</small><strong>${escapeHtml(user.username)}</strong></div>${giftHTML(user)}`;
 }
 
 function clearDropIndicators() {
@@ -93,6 +96,29 @@ async function submitQueueOrder(ids) {
   try { await api('/api/queue/reorder', {body:{ids}}); } catch (err) { toast(err.message); }
 }
 
+function queueDropTarget(list, clientY) {
+  const items = [...list.querySelectorAll('.mini-queue-item')].filter(item => item.dataset.id !== dragId);
+  if (!items.length) return null;
+  const before = items.find(item => {
+    const rect = item.getBoundingClientRect();
+    return clientY < rect.top + rect.height / 2;
+  });
+  return before ? {node:before, after:false} : {node:items[items.length - 1], after:true};
+}
+
+async function dropQueueUser(list, clientY) {
+  const destination = queueDropTarget(list, clientY);
+  if (!dragId || !destination) return clearDropIndicators();
+  const ids = state.queue.map(user => user.id);
+  const from = ids.indexOf(dragId);
+  if (from < 0) return clearDropIndicators();
+  ids.splice(from, 1);
+  const target = ids.indexOf(destination.node.dataset.id);
+  ids.splice(target + (destination.after ? 1 : 0), 0, dragId);
+  clearDropIndicators();
+  await submitQueueOrder(ids);
+}
+
 function renderQueue() {
   const list = $('queueList');
   if (!state.queue.length) {
@@ -100,13 +126,27 @@ function renderQueue() {
     return;
   }
   list.innerHTML = state.queue.map((user, index) => `
-    <div class="mini-queue-item${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
+    <div class="mini-queue-item${hasGift(user) ? ' gifted' : ''}${user.priority ? ' priority' : ''}" draggable="true" data-id="${escapeHtml(user.id)}">
       <span class="mini-drag-handle" title="拖动调整顺序" aria-hidden="true">≡</span>
       <div class="mini-position">${String(index + 1).padStart(2, '0')}</div>
-      <div class="mini-queue-user">${avatarHTML(user)}<div class="mini-queue-name"><strong>${escapeHtml(user.username)}</strong><small>${user.manual ? '手动添加' : `UID ${escapeHtml(user.uid)}`}</small></div></div>
+      <div class="mini-queue-user">${avatarHTML(user)}<div class="mini-queue-name"><strong>${escapeHtml(user.username)}</strong></div></div>
       ${giftHTML(user)}
       <button class="btn danger mini-remove-btn" data-remove="${escapeHtml(user.id)}">移除</button>
     </div>`).join('');
+
+  list.ondragover = event => {
+    if (!dragId) return;
+    event.preventDefault();
+    clearDropIndicators();
+    const destination = queueDropTarget(list, event.clientY);
+    destination?.node.classList.add(destination.after ? 'drop-after' : 'drop-before');
+    event.dataTransfer.dropEffect = 'move';
+  };
+  list.ondrop = event => {
+    if (!dragId) return;
+    event.preventDefault();
+    dropQueueUser(list, event.clientY);
+  };
 
   list.querySelectorAll('.mini-queue-item').forEach(node => {
     node.addEventListener('dragstart', event => {
@@ -119,31 +159,6 @@ function renderQueue() {
       node.classList.remove('dragging');
       dragId = null;
       clearDropIndicators();
-    });
-    node.addEventListener('dragover', event => {
-      event.preventDefault();
-      if (!dragId || dragId === node.dataset.id) return;
-      clearDropIndicators();
-      const rect = node.getBoundingClientRect();
-      node.classList.add(event.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
-      event.dataTransfer.dropEffect = 'move';
-    });
-    node.addEventListener('dragleave', event => {
-      if (!node.contains(event.relatedTarget)) node.classList.remove('drop-before','drop-after');
-    });
-    node.addEventListener('drop', async event => {
-      event.preventDefault();
-      const targetId = node.dataset.id;
-      if (!dragId || dragId === targetId) return clearDropIndicators();
-      const after = node.classList.contains('drop-after');
-      const ids = state.queue.map(user => user.id);
-      const from = ids.indexOf(dragId);
-      if (from < 0) return clearDropIndicators();
-      ids.splice(from, 1);
-      const target = ids.indexOf(targetId);
-      ids.splice(target + (after ? 1 : 0), 0, dragId);
-      clearDropIndicators();
-      await submitQueueOrder(ids);
     });
   });
   list.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', async () => {
@@ -162,7 +177,6 @@ async function init() {
   source.onmessage = event => render(JSON.parse(event.data));
   source.onerror = () => toast('简易控制页与本机服务的事件流已中断，浏览器会自动尝试恢复');
   $('nextBtn').addEventListener('click', () => api('/api/queue/next').catch(err => toast(err.message)));
-  $('skipBtn').addEventListener('click', () => api('/api/queue/skip').catch(err => toast(err.message)));
   $('pauseBtn').addEventListener('click', () => api('/api/queue/pause', {body:{paused:!state.paused}}).catch(err => toast(err.message)));
   $('clearBtn').addEventListener('click', async () => {
     if (!await showAppConfirm({title:'清空队列', message:'确定清空当前队列吗？此操作无法撤销。', confirmText:'清空队列', danger:true})) return;

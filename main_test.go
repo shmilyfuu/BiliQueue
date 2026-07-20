@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVersionFileMatchesBinaryVersion(t *testing.T) {
@@ -50,21 +51,148 @@ func TestQueueCommands(t *testing.T) {
 }
 
 func TestDanmuParser(t *testing.T) {
+	medal := make([]any, 13)
+	medal[0] = float64(18)
+	medal[1] = "牌子"
+	medal[3] = float64(7788)
+	medal[12] = float64(9988)
 	obj := map[string]any{
 		"cmd": "DANMU_MSG:4:0:2:2:2:0",
 		"info": []any{
 			[]any{},
 			"排队",
 			[]any{float64(12345), "测试用户"},
-			[]any{float64(18), "牌子"},
+			medal,
+			nil, nil, nil,
+			float64(3),
 		},
 	}
 	msg, ok := parseDanmuMessage(obj)
 	if !ok {
 		t.Fatal("danmu was not parsed")
 	}
-	if msg.UID != 12345 || msg.Username != "测试用户" || msg.Text != "排队" || msg.MedalLevel != 18 {
+	if msg.UID != 12345 || msg.Username != "测试用户" || msg.Text != "排队" || msg.MedalLevel != 18 || msg.MedalRoomID != 7788 || msg.MedalTargetUID != 9988 || msg.GuardLevel != 3 {
 		t.Fatalf("unexpected message: %#v", msg)
+	}
+}
+
+func TestNormalizedDanmuEligibilityParser(t *testing.T) {
+	obj := map[string]any{
+		"cmd": "DANMU_MSG",
+		"data": map[string]any{
+			"uid": float64(23456), "uname": "新格式用户", "msg": "排队",
+			"fans_medal_level": float64(12), "fans_medal_wearing_status": true,
+			"guard_level": float64(2),
+		},
+	}
+	msg, ok := parseDanmuMessage(obj)
+	if !ok || msg.MedalLevel != 12 || !msg.MedalCurrentRoom || msg.GuardLevel != 2 {
+		t.Fatalf("unexpected normalized message: %#v ok=%v", msg, ok)
+	}
+}
+
+func TestGuardBuyParser(t *testing.T) {
+	guard, ok := parseGuardMessage(map[string]any{
+		"cmd": "GUARD_BUY",
+		"data": map[string]any{
+			"uid": float64(34567), "username": "总督用户", "guard_level": float64(1),
+			"uinfo": map[string]any{"base": map[string]any{"face": "//example.com/avatar.png"}},
+		},
+	})
+	if !ok || guard.UID != 34567 || guard.Username != "总督用户" || guard.GuardLevel != 1 || guard.Avatar != "https://example.com/avatar.png" {
+		t.Fatalf("unexpected guard message: %#v ok=%v", guard, ok)
+	}
+}
+
+func TestGiftParserIncludesGuardLevel(t *testing.T) {
+	gift, ok := parseGiftMessage(map[string]any{
+		"cmd": "SEND_GIFT",
+		"data": map[string]any{
+			"uid": float64(45678), "uname": "舰长用户", "giftName": "测试礼物",
+			"giftId": float64(1), "num": float64(1), "total_coin": float64(10000),
+			"coin_type": "gold", "guard_level": float64(3),
+		},
+	})
+	if !ok || gift.GuardLevel != 3 {
+		t.Fatalf("gift guard level was not parsed: %#v ok=%v", gift, ok)
+	}
+}
+
+func TestQueueIdentityEligibility(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.mu.Lock()
+	a.resolvedRoomID = 7788
+	a.anchorUID = 9988
+	a.config.Eligibility = QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10}
+	a.mu.Unlock()
+
+	a.processMessage(ChatMessage{UID: 1, Username: "低等级", Text: "排队", MedalLevel: 9, MedalRoomID: 7788, MedalTargetUID: 9988})
+	a.processMessage(ChatMessage{UID: 2, Username: "其他直播间", Text: "排队", MedalLevel: 20, MedalRoomID: 8877, MedalTargetUID: 8899})
+	a.processMessage(ChatMessage{UID: 3, Username: "当前粉丝牌", Text: "排队", MedalLevel: 10, MedalRoomID: 7788, MedalTargetUID: 9988})
+	queue := a.state().Queue
+	if len(queue) != 1 || queue[0].UID != 3 {
+		t.Fatalf("fan medal eligibility failed: %#v", queue)
+	}
+
+	a.mu.Lock()
+	a.config.Eligibility.GuardEnabled = true
+	a.mu.Unlock()
+	a.processMessage(ChatMessage{UID: 4, Username: "大航海", Text: "排队", GuardLevel: 3})
+	queue = a.state().Queue
+	if len(queue) != 2 || queue[1].UID != 4 {
+		t.Fatalf("fan medal or guard eligibility failed: %#v", queue)
+	}
+
+	a.mu.Lock()
+	a.config.Eligibility = QueueEligibilityConfig{GuardEnabled: true, FanMedalLevel: 1}
+	a.mu.Unlock()
+	a.processMessage(ChatMessage{UID: 5, Username: "普通用户", Text: "排队", MedalLevel: 30, MedalCurrentRoom: true})
+	if len(a.state().Queue) != 2 {
+		t.Fatalf("guard-only eligibility accepted a non-guard: %#v", a.state().Queue)
+	}
+}
+
+func TestGuardPriorityRanksAboveGiftPriority(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.mu.Lock()
+	a.config.Eligibility.GuardPriorityEnabled = true
+	a.config.GiftPriority.Enabled = true
+	a.config.GiftPriority.ThresholdBattery = 100
+	a.mu.Unlock()
+
+	a.addUser(ChatMessage{UID: 1, Username: "当前"})
+	a.addUser(ChatMessage{UID: 2, Username: "普通"})
+	a.addUser(ChatMessage{UID: 3, Username: "礼物优先"})
+	a.processGift(GiftMessage{EventID: "guard-order-gift", UID: 3, Username: "礼物优先", GiftName: "礼物", CoinType: "gold", Battery: 100})
+	a.addUser(ChatMessage{UID: 4, Username: "舰长", GuardLevel: 3})
+	a.addUser(ChatMessage{UID: 5, Username: "总督", GuardLevel: 1})
+	a.addUser(ChatMessage{UID: 6, Username: "提督", GuardLevel: 2})
+
+	queue := a.state().Queue
+	want := []int64{1, 5, 6, 4, 3, 2}
+	if len(queue) != len(want) {
+		t.Fatalf("unexpected queue length: %#v", queue)
+	}
+	for index, uid := range want {
+		if queue[index].UID != uid {
+			t.Fatalf("unexpected priority order at %d: got=%d want=%d queue=%#v", index, queue[index].UID, uid, queue)
+		}
+	}
+}
+
+func TestGuardBuyUpgradesQueuedUserWithoutReplacingCurrent(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.mu.Lock()
+	a.config.Eligibility.GuardPriorityEnabled = true
+	a.mu.Unlock()
+	a.addUser(ChatMessage{UID: 1, Username: "当前"})
+	a.addUser(ChatMessage{UID: 2, Username: "普通一"})
+	a.addUser(ChatMessage{UID: 3, Username: "普通二"})
+
+	a.processGuard(GuardMessage{UID: 3, Username: "新总督", GuardLevel: 1})
+	queue := a.state().Queue
+	if len(queue) != 3 || queue[0].UID != 1 || queue[1].UID != 3 || queue[1].GuardLevel != 1 || queue[1].Username != "新总督" {
+		t.Fatalf("guard upgrade did not preserve current and promote waiting user: %#v", queue)
 	}
 }
 
@@ -242,6 +370,78 @@ func TestHTTPDebugFlow(t *testing.T) {
 	}
 }
 
+func TestManualDebugGiftUsesQueueIDAndSafeUID(t *testing.T) {
+	a := newApp(t.TempDir())
+	handler := a.routes()
+
+	manualResponse := httptest.NewRecorder()
+	manualRequest := httptest.NewRequest(http.MethodPost, "/api/queue/manual", bytes.NewBufferString(`{"username":"手动测试"}`))
+	handler.ServeHTTP(manualResponse, manualRequest)
+	if manualResponse.Code != http.StatusOK {
+		t.Fatalf("manual add status: %d body=%s", manualResponse.Code, manualResponse.Body.String())
+	}
+	queue := a.state().Queue
+	if len(queue) != 1 || !queue[0].Manual {
+		t.Fatalf("manual user was not added: %#v", queue)
+	}
+	const maxSafeInteger = int64(9007199254740991)
+	if queue[0].UID < -maxSafeInteger || queue[0].UID > maxSafeInteger {
+		t.Fatalf("manual uid is not JavaScript-safe: %d", queue[0].UID)
+	}
+
+	exactUID := int64(-1784515861431009600)
+	a.mu.Lock()
+	a.queue[0].UID = exactUID
+	a.config.GiftPriority.Enabled = true
+	a.config.GiftPriority.ThresholdBattery = 99
+	a.mu.Unlock()
+
+	giftResponse := httptest.NewRecorder()
+	giftBody := bytes.NewBufferString(`{"queueUserId":"` + queue[0].ID + `","uid":-1784515861431009500,"giftName":"小礼物","battery":50}`)
+	giftRequest := httptest.NewRequest(http.MethodPost, "/api/debug/gift", giftBody)
+	handler.ServeHTTP(giftResponse, giftRequest)
+	if giftResponse.Code != http.StatusOK {
+		t.Fatalf("debug gift status: %d body=%s", giftResponse.Code, giftResponse.Body.String())
+	}
+	queue = a.state().Queue
+	if len(queue) != 1 || queue[0].UID != exactUID || queue[0].Priority || !queue[0].HasGift || queue[0].GiftBattery != 50 {
+		t.Fatalf("below-threshold debug gift was not recorded on the exact manual user: %#v", queue)
+	}
+
+	defaultResponse := httptest.NewRecorder()
+	defaultBody := bytes.NewBufferString(`{"queueUserId":"` + queue[0].ID + `","giftName":"默认门槛礼物"}`)
+	defaultRequest := httptest.NewRequest(http.MethodPost, "/api/debug/gift", defaultBody)
+	handler.ServeHTTP(defaultResponse, defaultRequest)
+	if defaultResponse.Code != http.StatusOK {
+		t.Fatalf("default debug gift status: %d body=%s", defaultResponse.Code, defaultResponse.Body.String())
+	}
+	queue = a.state().Queue
+	if len(queue) != 1 || !queue[0].Priority || queue[0].GiftBattery != 149 || queue[0].PriorityGiftBattery != 99 {
+		t.Fatalf("blank debug gift did not use the configured threshold: %#v", queue)
+	}
+}
+
+func TestLegacyQueueGiftFieldsMigrate(t *testing.T) {
+	dir := t.TempDir()
+	a := newApp(dir)
+	snapshot := queueSnapshot{
+		Date:  time.Now().Format("2006-01-02"),
+		Queue: []QueueUser{{ID: "legacy-gift", UID: 1, Username: "旧礼物用户", Priority: true, GiftName: "旧礼物", GiftBattery: 123}},
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a.queuePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := newApp(dir)
+	queue := reloaded.state().Queue
+	if len(queue) != 1 || !queue[0].HasGift || queue[0].PriorityGiftBattery != 123 || queue[0].GiftBattery != 123 {
+		t.Fatalf("legacy gift fields were not migrated: %#v", queue)
+	}
+}
+
 func TestMiniControlWindowEndpointsWithoutActiveWindow(t *testing.T) {
 	a := newApp(t.TempDir())
 	handler := a.routes()
@@ -355,6 +555,89 @@ func TestGiftPriority(t *testing.T) {
 	}
 }
 
+func TestPaidGiftQueueAndPriority(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.processMessage(ChatMessage{UID: 1, Username: "当前", Text: "排队"})
+	a.mu.Lock()
+	a.config.GiftPriority.PaidQueueEnabled = true
+	a.config.GiftPriority.QueueThresholdBattery = 100
+	a.config.GiftPriority.Enabled = true
+	a.config.GiftPriority.ThresholdBattery = 300
+	a.config.Eligibility = QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 100, GuardEnabled: true}
+	a.mu.Unlock()
+
+	a.processGift(GiftMessage{EventID: "paid-queue-1", UID: 2, Username: "礼物排队", GiftName: "礼物", CoinType: "gold", Battery: 100})
+	queue := a.state().Queue
+	if len(queue) != 2 || queue[1].UID != 2 || queue[1].Priority || !queue[1].HasGift || queue[1].GiftBattery != 100 {
+		t.Fatalf("paid gift queue failed: %#v", queue)
+	}
+
+	a.processGift(GiftMessage{EventID: "paid-queue-2", UID: 3, Username: "礼物插队", GiftName: "大礼物", CoinType: "gold", Battery: 300})
+	queue = a.state().Queue
+	if len(queue) != 3 || queue[1].UID != 3 || !queue[1].Priority || !queue[1].HasGift || queue[1].GiftBattery != 300 || queue[1].PriorityGiftBattery != 300 || queue[2].UID != 2 {
+		t.Fatalf("paid gift queue priority failed: %#v", queue)
+	}
+
+	a.processGift(GiftMessage{EventID: "paid-queue-3", UID: 4, Username: "未达门槛", GiftName: "小礼物", CoinType: "gold", Battery: 99})
+	if len(a.state().Queue) != 3 {
+		t.Fatalf("below-threshold gift entered queue: %#v", a.state().Queue)
+	}
+}
+
+func TestManualUserCanReceiveGiftWithoutDuplicate(t *testing.T) {
+	a := newApp(t.TempDir())
+	ok, detail := a.addUser(ChatMessage{UID: -123, Username: "手动用户", Manual: true})
+	if !ok {
+		t.Fatalf("manual user was not added: %s", detail)
+	}
+	a.mu.Lock()
+	a.config.GiftPriority.PaidQueueEnabled = true
+	a.config.GiftPriority.QueueThresholdBattery = 100
+	a.config.GiftPriority.Enabled = true
+	a.config.GiftPriority.ThresholdBattery = 100
+	a.mu.Unlock()
+
+	a.processGift(GiftMessage{EventID: "manual-gift", UID: -123, Username: "手动用户", GiftName: "测试礼物", CoinType: "gold", Battery: 100})
+	queue := a.state().Queue
+	if len(queue) != 1 || queue[0].UID != -123 || !queue[0].Manual || !queue[0].Priority || queue[0].GiftBattery != 100 {
+		t.Fatalf("manual gift should update the existing user without duplication: %#v", queue)
+	}
+}
+
+func TestQueuedGiftDisplayAndSingleGiftPriority(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.processMessage(ChatMessage{UID: 1, Username: "当前", Text: "排队"})
+	a.processMessage(ChatMessage{UID: 2, Username: "送礼用户", Text: "排队"})
+	a.mu.Lock()
+	a.config.GiftPriority.Enabled = true
+	a.config.GiftPriority.ThresholdBattery = 100
+	a.mu.Unlock()
+
+	a.processGift(GiftMessage{EventID: "display-small-1", UID: 2, Username: "送礼用户", GiftName: "小礼物", GiftIcon: "small.png", CoinType: "gold", Battery: 60})
+	queue := a.state().Queue
+	if len(queue) != 2 || queue[1].Priority || !queue[1].HasGift || queue[1].GiftBattery != 60 || queue[1].GiftIcon != "small.png" {
+		t.Fatalf("below-threshold paid gift was not displayed: %#v", queue)
+	}
+
+	a.processGift(GiftMessage{EventID: "display-free", UID: 2, Username: "送礼用户", GiftName: "免费礼物", GiftIcon: "free.png", CoinType: "silver", Battery: 999})
+	queue = a.state().Queue
+	if queue[1].Priority || queue[1].GiftBattery != 60 || queue[1].GiftName != "免费礼物" || queue[1].GiftIcon != "free.png" {
+		t.Fatalf("free gift should update the latest gift without adding battery: %#v", queue[1])
+	}
+
+	a.processGift(GiftMessage{EventID: "display-small-2", UID: 2, Username: "送礼用户", GiftName: "另一个小礼物", GiftIcon: "small-2.png", CoinType: "gold", Battery: 50})
+	queue = a.state().Queue
+	if queue[1].Priority || queue[1].GiftBattery != 110 {
+		t.Fatalf("cumulative small gifts triggered priority: %#v", queue[1])
+	}
+
+	a.processGift(GiftMessage{EventID: "display-priority", UID: 2, Username: "送礼用户", GiftName: "达标礼物", GiftIcon: "priority.png", CoinType: "gold", Battery: 100})
+	queue = a.state().Queue
+	if !queue[1].Priority || queue[1].GiftBattery != 210 || queue[1].PriorityGiftBattery != 100 || queue[1].GiftIcon != "priority.png" {
+		t.Fatalf("single qualifying gift did not trigger priority independently: %#v", queue[1])
+	}
+}
+
 func TestGiftPrioritySortBySingleGiftValue(t *testing.T) {
 	a := newApp(t.TempDir())
 	a.mu.Lock()
@@ -385,7 +668,7 @@ func TestGiftPrioritySortBySingleGiftValue(t *testing.T) {
 	// 比较最近一次达到门槛的单次礼物价值，不做累计。
 	a.processGift(GiftMessage{EventID: "sort-4", UID: 3, Username: "一百", GiftName: "大礼物", CoinType: "gold", Battery: 500})
 	queue = a.state().Queue
-	if queue[1].UID != 3 || queue[1].GiftBattery != 500 {
+	if queue[1].UID != 3 || queue[1].GiftBattery != 600 || queue[1].PriorityGiftBattery != 500 {
 		t.Fatalf("single gift value reorder failed: %#v", queue)
 	}
 }
@@ -525,6 +808,26 @@ func TestV2ConfigMigratesAreaTextStyles(t *testing.T) {
 	}
 	if cfg.Overlay.InfoFontSize != 18 || cfg.Overlay.QueueEmptyText != "空" {
 		t.Fatalf("new defaults not added: %#v", cfg.Overlay)
+	}
+	if !cfg.Overlay.ShowGiftBattery || cfg.Overlay.GiftBatterySize != 14 {
+		t.Fatalf("gift battery display defaults not added: %#v", cfg.Overlay)
+	}
+}
+
+func TestV14ConfigMigratesGiftBatteryDisplay(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SchemaVersion = 14
+	cfg.Overlay.ShowGiftBattery = false
+	cfg.Overlay.GiftBatterySize = 0
+	applyConfigDefaults(&cfg)
+	if !cfg.Overlay.ShowGiftBattery || cfg.Overlay.GiftBatterySize != 14 {
+		t.Fatalf("gift battery display not migrated: %#v", cfg.Overlay)
+	}
+
+	cfg.Overlay.ShowGiftBattery = false
+	applyConfigDefaults(&cfg)
+	if cfg.Overlay.ShowGiftBattery {
+		t.Fatal("current gift battery visibility setting was overwritten")
 	}
 }
 

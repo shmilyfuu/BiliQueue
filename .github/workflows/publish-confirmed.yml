@@ -2,6 +2,15 @@ name: Publish confirmed version
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without the v prefix
+        required: true
+        type: string
+      confirm:
+        description: Type RELEASE to confirm publication
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,6 +27,19 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: false
+
+      - name: Validate release request
+        shell: bash
+        run: |
+          VERSION="$(cat VERSION)"
+          if [[ "${{ inputs.confirm }}" != "RELEASE" ]]; then
+            echo "Release confirmation is missing." >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.version }}" != "$VERSION" ]]; then
+            echo "Requested version ${{ inputs.version }} does not match VERSION $VERSION." >&2
+            exit 1
+          fi
 
       - name: Test
         run: |
@@ -43,6 +65,7 @@ jobs:
           cp -a assets/. "dist/${PACKAGE}/assets/"
           touch "dist/${PACKAGE}/data/.gitkeep" "dist/${PACKAGE}/fonts/.gitkeep"
           (cd dist && zip -qr "../${PACKAGE}.zip" "${PACKAGE}")
+          sha256sum "${PACKAGE}.zip" > "${PACKAGE}.zip.sha256"
           zip -qr "${SOURCE_PACKAGE}" .             -x '.git/*'             -x 'dist/*'             -x 'build/*'             -x '*.exe'             -x '*.zip'             -x 'data/logs/*'             -x 'data/auth.json'             -x 'data/config.json'             -x 'data/queue-today.json'             -x 'data/avatars/*'             -x 'data/backups/*'             -x 'fonts/*.ttf'             -x 'fonts/*.otf'             -x 'fonts/*.woff'             -x 'fonts/*.woff2'
 
       - name: Create GitHub Release
@@ -53,11 +76,21 @@ jobs:
           VERSION="$(cat VERSION)"
           TAG="v${VERSION}"
           WINDOWS_ASSET="BiliQueue-v${VERSION}-windows.zip"
+          WINDOWS_CHECKSUM="${WINDOWS_ASSET}.sha256"
           SOURCE_ASSET="BiliQueue-v${VERSION}-source.zip"
           awk 'BEGIN{seen=0} /^---[[:space:]]*$/{if(seen){exit}} {print; seen=1}' RELEASE_NOTES.md > release-notes-current.md
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET" --clobber
+            gh release upload "$TAG" "$WINDOWS_ASSET" "$WINDOWS_CHECKSUM" "$SOURCE_ASSET" --clobber
             gh release edit "$TAG" --notes-file release-notes-current.md
           else
-            gh release create "$TAG" "$WINDOWS_ASSET" "$SOURCE_ASSET"               --target main               --title "BiliQueue ${TAG}"               --notes-file release-notes-current.md
+            gh release create "$TAG" "$WINDOWS_ASSET" "$WINDOWS_CHECKSUM" "$SOURCE_ASSET"               --target main               --title "BiliQueue ${TAG}"               --notes-file release-notes-current.md
           fi
+
+      - name: Create Gitee Release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="$(cat VERSION)"
+          chmod +x .github/scripts/publish-gitee-release.sh
+          VERSION="$VERSION" .github/scripts/publish-gitee-release.sh

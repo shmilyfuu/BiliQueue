@@ -8,5 +8,6 @@ type MiniControlWindowState struct {
 	Supported bool `json:"supported"`
 	Active    bool `json:"active"`
 	Opening   bool `json:"opening"`
+	Visible   bool `json:"visible"`
 	Topmost   bool `json:"topmost"`
 }

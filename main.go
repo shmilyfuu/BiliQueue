@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-//go:embed web/*
+//go:embed web/* assets/*
 var webFiles embed.FS
 
 type OverlayStyle struct {
@@ -87,11 +87,14 @@ type OverlayStyle struct {
 	InfoBackgroundOpacity    float64 `json:"infoBackgroundOpacity"`
 	Radius                   int     `json:"radius"`
 	ShowAvatar               bool    `json:"showAvatar"`
+	ShowGuardIcon            bool    `json:"showGuardIcon"`
 	ShowCount                bool    `json:"showCount"`
 	ShowRules                bool    `json:"showRules"`
 	CurrentEnabled           bool    `json:"currentEnabled"`
 	InfoEnabled              bool    `json:"infoEnabled"`
 	ShowGiftIcon             bool    `json:"showGiftIcon"`
+	ShowGiftBattery          bool    `json:"showGiftBattery"`
+	GiftBatterySize          int     `json:"giftBatterySize"`
 	ScrollMode               string  `json:"scrollMode"`
 	ShortAlign               string  `json:"shortAlign"`
 	CurrentWidth             int     `json:"currentWidth"`
@@ -112,9 +115,22 @@ type OverlayStyle struct {
 }
 
 type GiftPriorityConfig struct {
-	Enabled          bool    `json:"enabled"`
-	ThresholdBattery float64 `json:"thresholdBattery"`
-	SortByValue      bool    `json:"sortByValue"`
+	Enabled               bool    `json:"enabled"`
+	ThresholdBattery      float64 `json:"thresholdBattery"`
+	SortByValue           bool    `json:"sortByValue"`
+	PaidQueueEnabled      bool    `json:"paidQueueEnabled"`
+	QueueThresholdBattery float64 `json:"queueThresholdBattery"`
+}
+
+type QueueEligibilityConfig struct {
+	FanMedalEnabled      bool `json:"fanMedalEnabled"`
+	FanMedalLevel        int  `json:"fanMedalLevel"`
+	GuardEnabled         bool `json:"guardEnabled"`
+	GuardPriorityEnabled bool `json:"guardPriorityEnabled"`
+}
+
+type UpdateConfig struct {
+	AutoCheck bool `json:"autoCheck"`
 }
 
 type HotkeyConfig struct {
@@ -125,33 +141,38 @@ type HotkeyConfig struct {
 }
 
 type Config struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	ListenAddress string             `json:"listenAddress"`
-	RoomID        string             `json:"roomId"`
-	QueueEnabled  bool               `json:"queueEnabled"`
-	JoinCommand   string             `json:"joinCommand"`
-	CancelCommand string             `json:"cancelCommand"`
-	ClearCommand  string             `json:"clearCommand"`
-	NextCommand   string             `json:"nextCommand"`
-	MaxQueue      int                `json:"maxQueue"`
-	GiftPriority  GiftPriorityConfig `json:"giftPriority"`
-	Hotkeys       HotkeyConfig       `json:"hotkeys"`
-	Overlay       OverlayStyle       `json:"overlay"`
+	SchemaVersion int                    `json:"schemaVersion"`
+	ListenAddress string                 `json:"listenAddress"`
+	RoomID        string                 `json:"roomId"`
+	QueueEnabled  bool                   `json:"queueEnabled"`
+	JoinCommand   string                 `json:"joinCommand"`
+	CancelCommand string                 `json:"cancelCommand"`
+	ClearCommand  string                 `json:"clearCommand"`
+	NextCommand   string                 `json:"nextCommand"`
+	MaxQueue      int                    `json:"maxQueue"`
+	GiftPriority  GiftPriorityConfig     `json:"giftPriority"`
+	Eligibility   QueueEligibilityConfig `json:"eligibility"`
+	Hotkeys       HotkeyConfig           `json:"hotkeys"`
+	Updates       UpdateConfig           `json:"updates"`
+	Overlay       OverlayStyle           `json:"overlay"`
 }
 
 type QueueUser struct {
-	ID          string  `json:"id"`
-	UID         int64   `json:"uid"`
-	Username    string  `json:"username"`
-	Avatar      string  `json:"avatar,omitempty"`
-	MedalLevel  int     `json:"medalLevel,omitempty"`
-	JoinedAt    int64   `json:"joinedAt"`
-	Manual      bool    `json:"manual,omitempty"`
-	Priority    bool    `json:"priority,omitempty"`
-	GiftName    string  `json:"giftName,omitempty"`
-	GiftIcon    string  `json:"giftIcon,omitempty"`
-	GiftBattery float64 `json:"giftBattery,omitempty"`
-	PriorityAt  int64   `json:"priorityAt,omitempty"`
+	ID                  string  `json:"id"`
+	UID                 int64   `json:"uid"`
+	Username            string  `json:"username"`
+	Avatar              string  `json:"avatar,omitempty"`
+	MedalLevel          int     `json:"medalLevel,omitempty"`
+	GuardLevel          int     `json:"guardLevel,omitempty"`
+	JoinedAt            int64   `json:"joinedAt"`
+	Manual              bool    `json:"manual,omitempty"`
+	Priority            bool    `json:"priority,omitempty"`
+	HasGift             bool    `json:"hasGift,omitempty"`
+	GiftName            string  `json:"giftName,omitempty"`
+	GiftIcon            string  `json:"giftIcon,omitempty"`
+	GiftBattery         float64 `json:"giftBattery,omitempty"`
+	PriorityGiftBattery float64 `json:"priorityGiftBattery,omitempty"`
+	PriorityAt          int64   `json:"priorityAt,omitempty"`
 }
 
 type PublicState struct {
@@ -172,9 +193,11 @@ type PublicState struct {
 	OverlayURL       string            `json:"overlayUrl,omitempty"`
 	MiniControlURL   string            `json:"miniControlUrl,omitempty"`
 	HotkeyStatus     map[string]string `json:"hotkeyStatus,omitempty"`
+	UpdateStatus     UpdateStatus      `json:"updateStatus"`
 	LastMessage      *ChatMessage      `json:"lastMessage,omitempty"`
 	LastGift         *GiftMessage      `json:"lastGift,omitempty"`
 	Version          string            `json:"version"`
+	RuntimeID        string            `json:"runtimeId"`
 }
 
 type queueSnapshot struct {
@@ -190,19 +213,23 @@ type App struct {
 	queue  []QueueUser
 	paused bool
 
-	loginStatus      string
-	loginDetail      string
-	connectionStatus string
-	connectionDetail string
-	resolvedRoomID   int64
-	roomTitle        string
-	anchorName       string
-	anchorUID        int64
-	serverControl    *ServerController
-	lastMessage      *ChatMessage
-	lastGift         *GiftMessage
-	giftEvents       map[string]int64
-	hotkeyStatus     map[string]string
+	loginStatus           string
+	loginDetail           string
+	connectionStatus      string
+	connectionDetail      string
+	resolvedRoomID        int64
+	roomTitle             string
+	anchorName            string
+	anchorUID             int64
+	serverControl         *ServerController
+	lastMessage           *ChatMessage
+	lastGift              *GiftMessage
+	giftEvents            map[string]int64
+	hotkeyStatus          map[string]string
+	updateStatus          UpdateStatus
+	updateNotifiedVersion string
+	preparedUpdate        *preparedUpdate
+	runtimeID             string
 
 	dataDir  string
 	fontsDir string
@@ -211,16 +238,18 @@ type App struct {
 	connectionCancel     context.CancelFunc
 	connectionGeneration uint64
 	messageSeq           atomic.Uint64
+	updateCheckMu        sync.Mutex
+	updateInstallMu      sync.Mutex
 }
 
-const version = "0.1.15"
+const version = "0.1.16"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
 
 func defaultConfig() Config {
 	return Config{
-		SchemaVersion: 13,
+		SchemaVersion: 16,
 		ListenAddress: "127.0.0.1:18303",
 		RoomID:        "",
 		QueueEnabled:  true,
@@ -229,8 +258,13 @@ func defaultConfig() Config {
 		ClearCommand:  "清空队列",
 		NextCommand:   "下一位",
 		MaxQueue:      100,
-		GiftPriority:  GiftPriorityConfig{Enabled: true, ThresholdBattery: 100, SortByValue: false},
-		Hotkeys:       HotkeyConfig{},
+		GiftPriority: GiftPriorityConfig{
+			Enabled: true, ThresholdBattery: 100, SortByValue: false,
+			PaidQueueEnabled: false, QueueThresholdBattery: 100,
+		},
+		Eligibility: QueueEligibilityConfig{FanMedalLevel: 1},
+		Hotkeys:     HotkeyConfig{},
+		Updates:     UpdateConfig{AutoCheck: true},
 		Overlay: OverlayStyle{
 			Height:                   50,
 			FontSize:                 24,
@@ -287,11 +321,14 @@ func defaultConfig() Config {
 			InfoBackgroundOpacity:    0.05,
 			Radius:                   16,
 			ShowAvatar:               true,
+			ShowGuardIcon:            true,
 			ShowCount:                true,
 			ShowRules:                true,
 			CurrentEnabled:           true,
 			InfoEnabled:              true,
 			ShowGiftIcon:             true,
+			ShowGiftBattery:          true,
+			GiftBatterySize:          14,
 			ScrollMode:               "continuous",
 			ShortAlign:               "center",
 			CurrentWidth:             300,
@@ -334,7 +371,8 @@ func newAppWithFonts(dataDir, fontsOverride string) *App {
 		fontsDir:         fontsDir,
 		clients:          make(map[chan []byte]struct{}),
 		giftEvents:       make(map[string]int64),
-		hotkeyStatus:     defaultHotkeyStatus("托盘尚未启动"),
+		hotkeyStatus:     defaultHotkeyStatus("快捷键服务尚未启动"),
+		runtimeID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 	}
 	_ = os.MkdirAll(dataDir, 0o755)
 	_ = os.MkdirAll(a.fontsDir, 0o755)
@@ -375,9 +413,11 @@ func (a *App) stateLocked() PublicState {
 		OverlayURL:       a.overlayURL(),
 		MiniControlURL:   a.miniControlURL(),
 		HotkeyStatus:     cloneStringMap(a.hotkeyStatus),
+		UpdateStatus:     a.updateStatus,
 		LastMessage:      msg,
 		LastGift:         gift,
 		Version:          version,
+		RuntimeID:        a.runtimeID,
 	}
 }
 
@@ -559,6 +599,8 @@ func applyConfigDefaults(cfg *Config) {
 	legacyV10 := cfg.SchemaVersion < 10
 	legacyV11 := cfg.SchemaVersion < 11
 	legacyV12 := cfg.SchemaVersion < 12
+	legacyV15 := cfg.SchemaVersion < 15
+	legacyV16 := cfg.SchemaVersion < 16
 	if strings.TrimSpace(cfg.ListenAddress) == "" {
 		cfg.ListenAddress = def.ListenAddress
 	}
@@ -584,6 +626,12 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.GiftPriority.ThresholdBattery <= 0 {
 		cfg.GiftPriority.ThresholdBattery = def.GiftPriority.ThresholdBattery
 	}
+	if cfg.GiftPriority.QueueThresholdBattery <= 0 {
+		cfg.GiftPriority.QueueThresholdBattery = def.GiftPriority.QueueThresholdBattery
+	}
+	if cfg.Eligibility.FanMedalLevel <= 0 {
+		cfg.Eligibility.FanMedalLevel = def.Eligibility.FanMedalLevel
+	}
 	if legacyV12 && cfg.Overlay.Height <= 0 {
 		cfg.Overlay.Height = def.Overlay.Height
 	}
@@ -593,6 +641,17 @@ func applyConfigDefaults(cfg *Config) {
 	if legacyV12 {
 		cfg.Overlay.CurrentEnabled = true
 		cfg.Overlay.InfoEnabled = true
+	}
+	if legacyV15 {
+		cfg.Overlay.ShowGiftBattery = def.Overlay.ShowGiftBattery
+		cfg.Overlay.GiftBatterySize = def.Overlay.GiftBatterySize
+	}
+	if legacyV16 {
+		cfg.Overlay.ShowGuardIcon = def.Overlay.ShowGuardIcon
+		cfg.Updates.AutoCheck = def.Updates.AutoCheck
+	}
+	if cfg.Overlay.GiftBatterySize < 8 || cfg.Overlay.GiftBatterySize > 48 {
+		cfg.Overlay.GiftBatterySize = def.Overlay.GiftBatterySize
 	}
 	if cfg.Overlay.FontSize < 12 {
 		cfg.Overlay.FontSize = def.Overlay.FontSize
@@ -1007,6 +1066,15 @@ func (a *App) loadTodayQueue() {
 		_ = os.Remove(a.queuePath())
 		return
 	}
+	for i := range snap.Queue {
+		user := &snap.Queue[i]
+		if !user.HasGift && (user.GiftName != "" || user.GiftIcon != "" || user.GiftBattery > 0) {
+			user.HasGift = true
+		}
+		if user.Priority && user.PriorityGiftBattery <= 0 {
+			user.PriorityGiftBattery = user.GiftBattery
+		}
+	}
 	a.queue = snap.Queue
 }
 
@@ -1032,6 +1100,13 @@ func (a *App) addUser(msg ChatMessage) (bool, string) {
 				u.MedalLevel = msg.MedalLevel
 				changed = true
 			}
+			if msg.GuardLevel > 0 && u.GuardLevel != msg.GuardLevel {
+				u.GuardLevel = msg.GuardLevel
+				changed = true
+			}
+			if changed && a.config.Eligibility.GuardPriorityEnabled {
+				a.normalizePriorityZoneLocked()
+			}
 			a.mu.Unlock()
 			if changed {
 				a.saveQueue()
@@ -1051,9 +1126,13 @@ func (a *App) addUser(msg ChatMessage) (bool, string) {
 		Username:   msg.Username,
 		Avatar:     msg.Avatar,
 		MedalLevel: msg.MedalLevel,
+		GuardLevel: msg.GuardLevel,
 		JoinedAt:   time.Now().UnixMilli(),
 		Manual:     msg.Manual,
 	})
+	if msg.GuardLevel > 0 && a.config.Eligibility.GuardPriorityEnabled {
+		a.normalizePriorityZoneLocked()
+	}
 	a.mu.Unlock()
 	a.saveQueue()
 	a.broadcast()
@@ -1100,13 +1179,111 @@ func (a *App) processGift(gift GiftMessage) {
 	cp := gift
 	a.lastGift = &cp
 	cfg := a.config.GiftPriority
+	queueEnabled := a.config.QueueEnabled
 	a.mu.Unlock()
-	a.broadcast()
 
-	if !a.state().Config.QueueEnabled || !cfg.Enabled || gift.CoinType != "gold" || gift.Battery < cfg.ThresholdBattery {
+	priorityEligible := queueEnabled && gift.CoinType == "gold" && cfg.Enabled && gift.Battery >= cfg.ThresholdBattery
+	if a.recordGiftForQueuedUser(gift, priorityEligible) {
 		return
 	}
-	a.prioritizeGiftSender(gift)
+	if !queueEnabled || gift.CoinType != "gold" || !cfg.PaidQueueEnabled || gift.Battery < cfg.QueueThresholdBattery {
+		a.broadcast()
+		return
+	}
+	if !a.enqueueGiftSender(gift, priorityEligible) {
+		a.broadcast()
+	}
+}
+
+func (a *App) recordGiftForQueuedUser(gift GiftMessage, priority bool) bool {
+	a.mu.Lock()
+	index := -1
+	for i := range a.queue {
+		if gift.UID != 0 && a.queue[i].UID == gift.UID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		a.mu.Unlock()
+		return false
+	}
+	now := time.Now().UnixMilli()
+	user := &a.queue[index]
+	if gift.Username != "" {
+		user.Username = gift.Username
+	}
+	if gift.Avatar != "" {
+		user.Avatar = gift.Avatar
+	}
+	if gift.GuardLevel > 0 {
+		user.GuardLevel = gift.GuardLevel
+	}
+	user.HasGift = true
+	user.GiftName = gift.GiftName
+	user.GiftIcon = gift.GiftIcon
+	if gift.CoinType == "gold" && gift.Battery > 0 {
+		user.GiftBattery += gift.Battery
+	}
+	if priority {
+		wasPriority := user.Priority
+		user.Priority = true
+		user.PriorityGiftBattery = gift.Battery
+		if !wasPriority || a.config.GiftPriority.SortByValue {
+			user.PriorityAt = now
+		}
+	}
+	if priority || (user.GuardLevel > 0 && a.config.Eligibility.GuardPriorityEnabled) {
+		a.normalizePriorityZoneLocked()
+	}
+	a.mu.Unlock()
+	a.saveQueue()
+	a.broadcast()
+	return true
+}
+
+func (a *App) enqueueGiftSender(gift GiftMessage, priority bool) bool {
+	a.mu.Lock()
+	if a.paused {
+		a.mu.Unlock()
+		return false
+	}
+	for _, user := range a.queue {
+		if gift.UID != 0 && user.UID == gift.UID {
+			a.mu.Unlock()
+			return a.recordGiftForQueuedUser(gift, priority)
+		}
+	}
+	if len(a.queue) >= a.config.MaxQueue {
+		a.mu.Unlock()
+		return false
+	}
+	now := time.Now().UnixMilli()
+	user := QueueUser{
+		ID:          fmt.Sprintf("%d-%d", time.Now().UnixNano(), a.messageSeq.Add(1)),
+		UID:         gift.UID,
+		Username:    gift.Username,
+		Avatar:      gift.Avatar,
+		GuardLevel:  gift.GuardLevel,
+		JoinedAt:    now,
+		HasGift:     true,
+		GiftName:    gift.GiftName,
+		GiftIcon:    gift.GiftIcon,
+		GiftBattery: gift.Battery,
+	}
+	if priority {
+		user.Priority = true
+		user.PriorityGiftBattery = gift.Battery
+		user.PriorityAt = now
+	}
+	a.queue = append(a.queue, user)
+	if priority || (user.GuardLevel > 0 && a.config.Eligibility.GuardPriorityEnabled) {
+		a.normalizePriorityZoneLocked()
+	}
+	a.mu.Unlock()
+	a.saveQueue()
+	a.broadcast()
+	return true
 }
 
 func (a *App) normalizePriorityZoneLocked() {
@@ -1117,76 +1294,74 @@ func (a *App) normalizePriorityZoneLocked() {
 	priority := make([]QueueUser, 0, len(a.queue)-1)
 	regular := make([]QueueUser, 0, len(a.queue)-1)
 	for _, user := range a.queue[1:] {
-		if user.Priority {
+		if a.waitingPriorityClassLocked(user) > 0 {
 			priority = append(priority, user)
 		} else {
 			regular = append(regular, user)
 		}
 	}
-	if a.config.GiftPriority.SortByValue {
-		sort.SliceStable(priority, func(i, j int) bool {
-			if priority[i].GiftBattery != priority[j].GiftBattery {
-				return priority[i].GiftBattery > priority[j].GiftBattery
+	sort.SliceStable(priority, func(i, j int) bool {
+		leftClass := a.waitingPriorityClassLocked(priority[i])
+		rightClass := a.waitingPriorityClassLocked(priority[j])
+		if leftClass != rightClass {
+			return leftClass > rightClass
+		}
+		if leftClass == 2 && priority[i].GuardLevel != priority[j].GuardLevel {
+			return priority[i].GuardLevel < priority[j].GuardLevel
+		}
+		if leftClass == 1 && a.config.GiftPriority.SortByValue {
+			if priority[i].PriorityGiftBattery != priority[j].PriorityGiftBattery {
+				return priority[i].PriorityGiftBattery > priority[j].PriorityGiftBattery
 			}
 			if priority[i].PriorityAt != priority[j].PriorityAt {
 				return priority[i].PriorityAt < priority[j].PriorityAt
 			}
 			return priority[i].JoinedAt < priority[j].JoinedAt
-		})
-	}
+		}
+		return false
+	})
 	a.queue = append([]QueueUser{current}, append(priority, regular...)...)
 }
 
-func (a *App) prioritizeGiftSender(gift GiftMessage) {
-	a.mu.Lock()
-	now := time.Now().UnixMilli()
-	index := -1
-	for i, user := range a.queue {
-		if user.UID == gift.UID {
-			index = i
-			break
-		}
+func (a *App) waitingPriorityClassLocked(user QueueUser) int {
+	if a.config.Eligibility.GuardPriorityEnabled && user.GuardLevel >= 1 && user.GuardLevel <= 3 {
+		return 2
 	}
-	if index == 0 {
-		user := &a.queue[0]
-		user.Priority = true
-		user.GiftName = gift.GiftName
-		user.GiftIcon = gift.GiftIcon
-		user.GiftBattery = gift.Battery
-		user.PriorityAt = now
-		if gift.Avatar != "" {
-			user.Avatar = gift.Avatar
-		}
-		a.mu.Unlock()
-		a.saveQueue()
-		a.broadcast()
-		return
+	if user.Priority {
+		return 1
 	}
+	return 0
+}
 
-	if index >= 0 {
-		user := &a.queue[index]
-		wasPriority := user.Priority
-		if gift.Username != "" {
-			user.Username = gift.Username
+func (a *App) processGuard(guard GuardMessage) {
+	a.mu.Lock()
+	changed := false
+	for i := range a.queue {
+		user := &a.queue[i]
+		if user.UID != guard.UID {
+			continue
 		}
-		if gift.Avatar != "" {
-			user.Avatar = gift.Avatar
+		if guard.Username != "" && user.Username != guard.Username {
+			user.Username = guard.Username
+			changed = true
 		}
-		user.Priority = true
-		user.GiftName = gift.GiftName
-		user.GiftIcon = gift.GiftIcon
-		user.GiftBattery = gift.Battery
-		if !wasPriority || a.config.GiftPriority.SortByValue {
-			user.PriorityAt = now
+		if guard.Avatar != "" && user.Avatar != guard.Avatar {
+			user.Avatar = guard.Avatar
+			changed = true
 		}
-	} else {
-		// Gift priority only upgrades users who are already in the queue.
-		// A paid gift from a non-queued viewer is recorded in lastGift but does not join the queue.
-		a.mu.Unlock()
+		if user.GuardLevel != guard.GuardLevel {
+			user.GuardLevel = guard.GuardLevel
+			changed = true
+		}
+		break
+	}
+	if changed && a.config.Eligibility.GuardPriorityEnabled {
+		a.normalizePriorityZoneLocked()
+	}
+	a.mu.Unlock()
+	if !changed {
 		return
 	}
-	a.normalizePriorityZoneLocked()
-	a.mu.Unlock()
 	a.saveQueue()
 	a.broadcast()
 }
@@ -1233,10 +1408,37 @@ func (a *App) processMessage(msg ChatMessage) {
 	}
 	switch cmd {
 	case joinCmd:
-		a.addUser(msg)
+		if a.canJoinByIdentity(msg) {
+			a.addUser(msg)
+		} else {
+			log.Printf("queue command ignored: sender uid=%d does not meet fan medal or guard eligibility", msg.UID)
+		}
 	case cancelCmd:
 		a.cancelUser(msg.UID)
 	}
+}
+
+func (a *App) canJoinByIdentity(msg ChatMessage) bool {
+	a.mu.RLock()
+	cfg := a.config.Eligibility
+	roomID := a.resolvedRoomID
+	anchorUID := a.anchorUID
+	a.mu.RUnlock()
+	if !cfg.FanMedalEnabled && !cfg.GuardEnabled {
+		return true
+	}
+	fanEligible := false
+	if cfg.FanMedalEnabled && msg.MedalLevel >= cfg.FanMedalLevel {
+		currentRoomMedal := msg.MedalCurrentRoom
+		if msg.MedalTargetUID > 0 && anchorUID > 0 {
+			currentRoomMedal = msg.MedalTargetUID == anchorUID
+		} else if msg.MedalRoomID > 0 && roomID > 0 {
+			currentRoomMedal = msg.MedalRoomID == roomID
+		}
+		fanEligible = currentRoomMedal
+	}
+	guardEligible := cfg.GuardEnabled && msg.GuardLevel > 0
+	return fanEligible || guardEligible
 }
 
 func (a *App) connect(roomID string) error {
@@ -1298,7 +1500,7 @@ func (a *App) connect(roomID string) error {
 		}
 		a.mu.Unlock()
 		a.broadcast()
-	}, a.processMessage, a.processGift)
+	}, a.processMessage, a.processGift, a.processGuard)
 	return nil
 }
 
@@ -1336,6 +1538,10 @@ func (a *App) routes() http.Handler {
 		panic(err)
 	}
 	assets := http.FileServer(http.FS(sub))
+	mux.HandleFunc("/assets/icon_battery.png", serveEmbedded("assets/icon_battery.png", "image/png"))
+	mux.HandleFunc("/assets/icon_captain.png", serveEmbedded("assets/icon_captain.png", "image/png"))
+	mux.HandleFunc("/assets/icon_supervisor.png", serveEmbedded("assets/icon_supervisor.png", "image/png"))
+	mux.HandleFunc("/assets/icon_governor.png", serveEmbedded("assets/icon_governor.png", "image/png"))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", assets))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -1356,6 +1562,92 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		writeJSON(w, http.StatusOK, a.state())
+	})
+	mux.HandleFunc("/api/update/notes", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"version": version, "notes": latestEmbeddedReleaseNotes()})
+	})
+	mux.HandleFunc("/api/update/check", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		info, err := a.checkForUpdates(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, info)
+	})
+	mux.HandleFunc("/api/update/install", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		if err := a.installLatestUpdate(ctx); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "restarting"})
+	})
+	mux.HandleFunc("/api/update/download", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		info, err := a.downloadLatestUpdate(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready", "version": info.Version})
+	})
+	mux.HandleFunc("/api/update/apply", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := a.applyPreparedUpdate(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "restarting"})
+	})
+	mux.HandleFunc("/api/update/defer", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		version, err := a.deferPreparedUpdate()
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deferred", "version": version})
+	})
+	mux.HandleFunc("/api/update/settings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			AutoCheck bool `json:"autoCheck"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		a.setAutoCheckUpdates(req.AutoCheck)
 		writeJSON(w, http.StatusOK, a.state())
 	})
 	mux.HandleFunc("/api/window/mini-control", func(w http.ResponseWriter, r *http.Request) {
@@ -1556,7 +1848,8 @@ func (a *App) routes() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "用户名不能为空"})
 			return
 		}
-		uid := -time.Now().UnixNano()
+		manualSequence := a.messageSeq.Add(1) % 1000
+		uid := -(time.Now().UnixMilli()*1000 + int64(manualSequence))
 		a.mu.RLock()
 		joinCommand := a.config.JoinCommand
 		a.mu.RUnlock()
@@ -1702,15 +1995,33 @@ func (a *App) routes() http.Handler {
 			return
 		}
 		var req struct {
-			UID      int64   `json:"uid"`
-			Username string  `json:"username"`
-			GiftName string  `json:"giftName"`
-			Battery  float64 `json:"battery"`
-			GiftIcon string  `json:"giftIcon"`
+			QueueUserID string  `json:"queueUserId"`
+			UID         int64   `json:"uid"`
+			Username    string  `json:"username"`
+			GiftName    string  `json:"giftName"`
+			Battery     float64 `json:"battery"`
+			GiftIcon    string  `json:"giftIcon"`
 		}
 		if err := decodeJSON(r, &req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
+		}
+		if req.QueueUserID != "" {
+			found := false
+			a.mu.RLock()
+			for _, user := range a.queue {
+				if user.ID == req.QueueUserID {
+					req.UID = user.UID
+					req.Username = user.Username
+					found = true
+					break
+				}
+			}
+			a.mu.RUnlock()
+			if !found {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "目标队列用户不存在"})
+				return
+			}
 		}
 		if req.UID == 0 {
 			req.UID = time.Now().UnixNano()
@@ -1724,7 +2035,7 @@ func (a *App) routes() http.Handler {
 		if req.Battery <= 0 {
 			req.Battery = a.state().Config.GiftPriority.ThresholdBattery
 		}
-		a.processGift(GiftMessage{EventID: fmt.Sprintf("debug-%d", time.Now().UnixNano()), UID: req.UID, Username: req.Username, GiftName: req.GiftName, GiftIcon: req.GiftIcon, Num: 1, CoinType: "gold", TotalCoin: int64(req.Battery * 100), Battery: req.Battery, ReceivedAt: time.Now().UnixMilli()})
+		a.processGift(GiftMessage{EventID: fmt.Sprintf("debug-%d-%d", time.Now().UnixNano(), a.messageSeq.Add(1)), UID: req.UID, Username: req.Username, GiftName: req.GiftName, GiftIcon: req.GiftIcon, Num: 1, CoinType: "gold", TotalCoin: int64(req.Battery * 100), Battery: req.Battery, ReceivedAt: time.Now().UnixMilli()})
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -1734,9 +2045,14 @@ func (a *App) routes() http.Handler {
 			return
 		}
 		var req struct {
-			UID      int64  `json:"uid"`
-			Username string `json:"username"`
-			Text     string `json:"text"`
+			UID              int64  `json:"uid"`
+			Username         string `json:"username"`
+			Text             string `json:"text"`
+			MedalLevel       int    `json:"medalLevel"`
+			MedalRoomID      int64  `json:"medalRoomId"`
+			MedalTargetUID   int64  `json:"medalTargetUid"`
+			MedalCurrentRoom bool   `json:"medalCurrentRoom"`
+			GuardLevel       int    `json:"guardLevel"`
 		}
 		if err := decodeJSON(r, &req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1748,7 +2064,12 @@ func (a *App) routes() http.Handler {
 		if strings.TrimSpace(req.Username) == "" {
 			req.Username = fmt.Sprintf("测试用户%d", a.messageSeq.Add(1))
 		}
-		a.processMessage(ChatMessage{UID: req.UID, Username: req.Username, Text: req.Text})
+		a.processMessage(ChatMessage{
+			UID: req.UID, Username: req.Username, Text: req.Text,
+			MedalLevel: req.MedalLevel, MedalRoomID: req.MedalRoomID,
+			MedalTargetUID: req.MedalTargetUID, MedalCurrentRoom: req.MedalCurrentRoom,
+			GuardLevel: req.GuardLevel,
+		})
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -2020,7 +2341,29 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "do not open the control page; kept for compatibility")
 	noTray := flag.Bool("no-tray", false, "disable the Windows system tray menu")
 	instanceID := flag.String("instance-id", defaultInstanceID, "single-instance namespace; use a unique value for isolated test runs")
+	updateHelper := flag.Bool("update-helper", false, "internal update helper mode")
+	updateTarget := flag.String("update-target", "", "internal update target")
+	updatePackageRoot := flag.String("update-package-root", "", "internal update package root")
+	updateRestartFile := flag.String("update-restart-file", "", "internal update restart specification")
+	updateParentPID := flag.Int("update-parent-pid", 0, "internal update parent process id")
+	updateCleanupRoot := flag.String("update-cleanup-root", "", "internal update cleanup directory")
+	updateCleanupBackup := flag.String("update-cleanup-backup", "", "internal update backup path")
 	flag.Parse()
+	if *updateHelper {
+		if err := runUpdateHelper(*updateTarget, *updatePackageRoot, *updateParentPID, *updateRestartFile); err != nil {
+			showErrorDialog("BiliQueue 更新失败", err.Error())
+		}
+		return
+	}
+	if *updateCleanupRoot != "" || *updateCleanupBackup != "" {
+		cleanupUpdateArtifacts(*updateCleanupRoot, *updateCleanupBackup)
+	}
+	if launched, err := launchDeferredUpdateIfPresent(); err != nil {
+		discardDeferredUpdate()
+		showErrorDialog("BiliQueue 更新失败", err.Error())
+	} else if launched {
+		return
+	}
 
 	logFile := setupLogging(*dataDir)
 	if logFile != nil {
@@ -2072,6 +2415,7 @@ func main() {
 	log.Printf("control: %s", controlURL)
 	log.Printf("browser source: %s", overlayURL)
 	app.autoConnectIfReady("startup")
+	app.startAutoUpdateChecks()
 
 	if *openBrowserOnStart && !*noBrowser {
 		go func() {
@@ -2082,10 +2426,10 @@ func main() {
 		}()
 	}
 
-	if runtime.GOOS == "windows" && !*noTray {
-		if err := runTray(app, controller, *dataDir); err != nil {
-			log.Printf("tray: %v", err)
-			showErrorDialog("BiliQueue 托盘启动失败", err.Error())
+	if runtime.GOOS == "windows" {
+		if err := runTray(app, controller, *dataDir, !*noTray); err != nil {
+			log.Printf("windows message service: %v", err)
+			showErrorDialog("BiliQueue Windows 服务启动失败", err.Error())
 		}
 		_ = controller.Close()
 		return

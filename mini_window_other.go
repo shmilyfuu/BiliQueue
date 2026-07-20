@@ -4,6 +4,8 @@ package main
 
 func openMiniControlWindow(app *App) error { return errMiniControlWindowUnavailable }
 
+func toggleMiniControlWindow(app *App) error { return errMiniControlWindowUnavailable }
+
 func setMiniControlWindowTopmost(app *App, topmost bool) (MiniControlWindowState, error) {
 	return miniControlWindowState(), errMiniControlWindowUnavailable
 }

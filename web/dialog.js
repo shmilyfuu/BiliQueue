@@ -44,6 +44,8 @@
     get('confirmTitle').textContent = options?.title || '确认操作';
     get('confirmMessage').textContent = options?.message || '';
     const accept = get('confirmAcceptBtn');
+    const cancel = get('confirmCancelBtn');
+    cancel?.classList.toggle('hidden', Boolean(options?.alert));
     accept.textContent = options?.confirmText || '确定';
     accept.classList.toggle('danger', Boolean(options?.danger));
     accept.classList.toggle('primary', !options?.danger);
@@ -51,4 +53,6 @@
     requestAnimationFrame(() => accept.focus({preventScroll:true}));
     return new Promise(resolve => { activeResolve = resolve; });
   };
+
+  window.showAppAlert = options => window.showAppConfirm({...options, alert:true, confirmText:options?.confirmText || '知道了'});
 })();

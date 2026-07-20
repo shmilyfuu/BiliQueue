@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	miniWindowWidth  = 540
-	miniWindowHeight = 720
+	miniWindowWidth  = 420
+	miniWindowHeight = 560
 
 	miniSWHide      = 0
 	miniSWRestore   = 9
@@ -35,6 +35,9 @@ const (
 	miniLoadingWindowClass = "BiliQueueMiniLoadingWindow"
 	miniWSExTopmost        = 0x00000008
 	miniWSOverlappedWindow = 0x00CF0000
+	miniWSThickFrame       = 0x00040000
+	miniWSMaximizeBox      = 0x00010000
+	miniWSFixedWindow      = miniWSOverlappedWindow &^ (miniWSThickFrame | miniWSMaximizeBox)
 	miniSSCenter           = 0x00000001
 	miniBkTransparent      = 1
 )
@@ -47,6 +50,9 @@ var (
 	miniProcSetWindowLong     = miniWindowUser32.NewProc("SetWindowLongPtrW")
 	miniProcCallWindow        = miniWindowUser32.NewProc("CallWindowProcW")
 	miniProcDefWindow         = miniWindowUser32.NewProc("DefWindowProcW")
+	miniProcGetClientRect     = miniWindowUser32.NewProc("GetClientRect")
+	miniProcGetWindowRect     = miniWindowUser32.NewProc("GetWindowRect")
+	miniProcAdjustWindowRect  = miniWindowUser32.NewProc("AdjustWindowRect")
 	miniWindowCallback        = syscall.NewCallback(miniControlWindowProc)
 	miniLoadingWindowCallback = syscall.NewCallback(miniLoadingWindowProc)
 	miniLoadingGDI32          = syscall.NewLazyDLL("gdi32.dll")
@@ -62,12 +68,20 @@ type miniWindowPreferences struct {
 	Topmost bool `json:"topmost"`
 }
 
+type miniWindowRect struct {
+	left   int32
+	top    int32
+	right  int32
+	bottom int32
+}
+
 type miniWindowManager struct {
 	mu          sync.Mutex
 	view        webview2.WebView
 	hwnd        uintptr
 	opening     bool
 	ready       bool
+	visible     bool
 	topmost     bool
 	destroying  bool
 	oldWndProc  uintptr
@@ -84,24 +98,71 @@ func openMiniControlWindow(app *App) error {
 	if nativeMiniWindow.view != nil && nativeMiniWindow.hwnd != 0 {
 		view := nativeMiniWindow.view
 		ready := nativeMiniWindow.ready
+		nativeMiniWindow.visible = true
+		loadingHwnd := nativeMiniWindow.loadingHwnd
 		nativeMiniWindow.mu.Unlock()
 		if ready {
-			view.Dispatch(func() {
-				hwnd := uintptr(view.Window())
-				miniProcShowWindow.Call(hwnd, miniSWRestore)
-				miniProcSetForeground.Call(hwnd)
-			})
+			showMiniControlView(view, true)
+		} else if loadingHwnd != 0 {
+			miniProcShowWindow.Call(loadingHwnd, miniSWRestore)
+			miniProcSetForeground.Call(loadingHwnd)
 		}
 		return nil
 	}
 	if nativeMiniWindow.opening {
+		nativeMiniWindow.visible = true
 		nativeMiniWindow.mu.Unlock()
 		return nil
 	}
 	nativeMiniWindow.opening = true
+	nativeMiniWindow.visible = true
 	nativeMiniWindow.mu.Unlock()
 	go runMiniControlWindow(app)
 	return nil
+}
+
+func toggleMiniControlWindow(app *App) error {
+	if app == nil {
+		return errMiniControlWindowUnavailable
+	}
+	nativeMiniWindow.mu.Lock()
+	if nativeMiniWindow.view == nil || nativeMiniWindow.hwnd == 0 {
+		if nativeMiniWindow.opening {
+			nativeMiniWindow.visible = !nativeMiniWindow.visible
+			nativeMiniWindow.mu.Unlock()
+			return nil
+		}
+		nativeMiniWindow.mu.Unlock()
+		return openMiniControlWindow(app)
+	}
+	view := nativeMiniWindow.view
+	visible := !nativeMiniWindow.visible
+	nativeMiniWindow.visible = visible
+	ready := nativeMiniWindow.ready
+	loadingHwnd := nativeMiniWindow.loadingHwnd
+	nativeMiniWindow.mu.Unlock()
+	if ready {
+		showMiniControlView(view, visible)
+	} else if loadingHwnd != 0 {
+		show := uintptr(miniSWHide)
+		if visible {
+			show = miniSWRestore
+		}
+		miniProcShowWindow.Call(loadingHwnd, show)
+	}
+	return nil
+}
+
+func showMiniControlView(view webview2.WebView, visible bool) {
+	view.Dispatch(func() {
+		hwnd := uintptr(view.Window())
+		if !visible {
+			miniProcShowWindow.Call(hwnd, miniSWHide)
+			return
+		}
+		miniProcShowWindow.Call(hwnd, miniSWRestore)
+		miniProcSetForeground.Call(hwnd)
+	})
 }
 
 func runMiniControlWindow(app *App) {
@@ -144,19 +205,23 @@ func runMiniControlWindow(app *App) {
 	hwnd := uintptr(view.Window())
 	miniProcShowWindow.Call(hwnd, miniSWHide)
 	view.SetSize(miniWindowWidth, miniWindowHeight, webview2.HintFixed)
+	applyMiniWindowClientSize(hwnd)
 	prefs := loadMiniWindowPreferences(app)
-	applyMiniWindowOuterSize(hwnd)
 	oldWndProc, _, _ := miniProcSetWindowLong.Call(hwnd, miniGWLWndProc, miniWindowCallback)
 	nativeMiniWindow.mu.Lock()
 	nativeMiniWindow.view = view
 	nativeMiniWindow.hwnd = hwnd
 	nativeMiniWindow.opening = false
 	nativeMiniWindow.ready = false
+	visible := nativeMiniWindow.visible
 	nativeMiniWindow.topmost = prefs.Topmost
 	nativeMiniWindow.destroying = false
 	nativeMiniWindow.oldWndProc = oldWndProc
 	nativeMiniWindow.loadingHwnd = loadingHwnd
 	nativeMiniWindow.mu.Unlock()
+	if !visible {
+		miniProcShowWindow.Call(loadingHwnd, miniSWHide)
+	}
 	applyMiniWindowTopmost(hwnd, prefs.Topmost)
 	if err := view.Bind("__biliqueueMiniReady", func() {
 		showReadyMiniControlWindow(hwnd)
@@ -191,10 +256,11 @@ func createMiniLoadingWindow(title string) uintptr {
 	className, _ := syscall.UTF16PtrFromString(miniLoadingWindowClass)
 	windowTitle, _ := syscall.UTF16PtrFromString(title)
 	hInstance, _, _ := procPromptGetModuleHandle.Call(0)
+	outerWidth, outerHeight := miniLoadingOuterSize()
 	screenWidth, _, _ := procGetSystemMetrics.Call(0)
 	screenHeight, _, _ := procGetSystemMetrics.Call(1)
-	x := (int32(screenWidth) - miniWindowWidth) / 2
-	y := (int32(screenHeight) - miniWindowHeight) / 2
+	x := (int32(screenWidth) - outerWidth) / 2
+	y := (int32(screenHeight) - outerHeight) / 2
 	if x < 0 {
 		x = 0
 	}
@@ -205,8 +271,8 @@ func createMiniLoadingWindow(title string) uintptr {
 		miniWSExTopmost,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(windowTitle)),
-		miniWSOverlappedWindow|wsVisible,
-		uintptr(x), uintptr(y), miniWindowWidth, miniWindowHeight,
+		miniWSFixedWindow|wsVisible,
+		uintptr(x), uintptr(y), uintptr(outerWidth), uintptr(outerHeight),
 		0, 0, hInstance, 0,
 	)
 	if hwnd != 0 {
@@ -215,7 +281,7 @@ func createMiniLoadingWindow(title string) uintptr {
 		label, _, _ := procCreateWindowExW.Call(
 			0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(loadingText)),
 			wsChild|wsVisible|miniSSCenter,
-			0, 318, miniWindowWidth, 28,
+			0, miniWindowHeight/2-14, miniWindowWidth, 28,
 			hwnd, 0, hInstance, 0,
 		)
 		if label != 0 {
@@ -227,6 +293,32 @@ func createMiniLoadingWindow(title string) uintptr {
 		procSetForegroundWnd.Call(hwnd)
 	}
 	return hwnd
+}
+
+func miniLoadingOuterSize() (int32, int32) {
+	rect := miniWindowRect{right: miniWindowWidth, bottom: miniWindowHeight}
+	miniProcAdjustWindowRect.Call(uintptr(unsafe.Pointer(&rect)), miniWSFixedWindow, 0)
+	return rect.right - rect.left, rect.bottom - rect.top
+}
+
+func applyMiniWindowClientSize(hwnd uintptr) {
+	var clientRect, windowRect miniWindowRect
+	if result, _, _ := miniProcGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&clientRect))); result == 0 {
+		return
+	}
+	if result, _, _ := miniProcGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&windowRect))); result == 0 {
+		return
+	}
+	clientWidth := clientRect.right - clientRect.left
+	clientHeight := clientRect.bottom - clientRect.top
+	outerWidth := windowRect.right - windowRect.left
+	outerHeight := windowRect.bottom - windowRect.top
+	targetOuterWidth := outerWidth + miniWindowWidth - clientWidth
+	targetOuterHeight := outerHeight + miniWindowHeight - clientHeight
+	miniProcSetWindowPosition.Call(
+		hwnd, 0, 0, 0, uintptr(targetOuterWidth), uintptr(targetOuterHeight),
+		miniSWPNoMove|miniSWPNoZOrder|miniSWPNoActive,
+	)
 }
 
 func miniLoadingWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
@@ -256,6 +348,11 @@ func miniControlWindowProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	nativeMiniWindow.mu.Unlock()
 
 	if owned && message == miniWMClose && !destroying {
+		nativeMiniWindow.mu.Lock()
+		if nativeMiniWindow.hwnd == hwnd {
+			nativeMiniWindow.visible = false
+		}
+		nativeMiniWindow.mu.Unlock()
 		miniProcShowWindow.Call(hwnd, miniSWHide)
 		return 0
 	}
@@ -274,12 +371,15 @@ func showReadyMiniControlWindow(hwnd uintptr) {
 		return
 	}
 	nativeMiniWindow.ready = true
+	visible := nativeMiniWindow.visible
 	loadingHwnd := nativeMiniWindow.loadingHwnd
 	nativeMiniWindow.loadingHwnd = 0
 	nativeMiniWindow.mu.Unlock()
-	miniProcShowWindow.Call(hwnd, miniSWRestore)
 	destroyMiniLoadingWindow(loadingHwnd)
-	miniProcSetForeground.Call(hwnd)
+	if visible {
+		miniProcShowWindow.Call(hwnd, miniSWRestore)
+		miniProcSetForeground.Call(hwnd)
+	}
 }
 
 func handleMissingWebView2(app *App) {
@@ -303,6 +403,7 @@ func markMiniWindowClosed() {
 	nativeMiniWindow.hwnd = 0
 	nativeMiniWindow.opening = false
 	nativeMiniWindow.ready = false
+	nativeMiniWindow.visible = false
 	nativeMiniWindow.destroying = false
 	nativeMiniWindow.oldWndProc = 0
 	nativeMiniWindow.loadingHwnd = 0
@@ -317,6 +418,7 @@ func miniControlWindowState() MiniControlWindowState {
 		Supported: true,
 		Active:    nativeMiniWindow.view != nil && nativeMiniWindow.hwnd != 0,
 		Opening:   nativeMiniWindow.opening,
+		Visible:   nativeMiniWindow.visible,
 		Topmost:   nativeMiniWindow.topmost,
 	}
 }
@@ -347,13 +449,6 @@ func applyMiniWindowTopmost(hwnd uintptr, topmost bool) {
 	miniProcSetWindowPosition.Call(hwnd, insertAfter, 0, 0, 0, 0, miniSWPNoMove|miniSWPNoSize|miniSWPNoActive)
 }
 
-func applyMiniWindowOuterSize(hwnd uintptr) {
-	miniProcSetWindowPosition.Call(
-		hwnd, 0, 0, 0, miniWindowWidth, miniWindowHeight,
-		miniSWPNoMove|miniSWPNoZOrder|miniSWPNoActive,
-	)
-}
-
 func refreshMiniControlWindow(app *App) {
 	nativeMiniWindow.mu.Lock()
 	view := nativeMiniWindow.view
@@ -369,6 +464,7 @@ func closeMiniControlWindow() {
 	nativeMiniWindow.mu.Lock()
 	view := nativeMiniWindow.view
 	nativeMiniWindow.destroying = true
+	nativeMiniWindow.visible = false
 	loadingHwnd := nativeMiniWindow.loadingHwnd
 	nativeMiniWindow.loadingHwnd = 0
 	nativeMiniWindow.mu.Unlock()
