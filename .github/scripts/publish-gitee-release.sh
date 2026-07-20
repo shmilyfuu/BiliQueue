@@ -34,31 +34,41 @@ status="$(curl --silent --show-error --output "$release_json" --write-out '%{htt
   --get "${API}/releases/tags/${TAG}" \
   --data-urlencode "access_token=${GITEE_TOKEN}")"
 
-release_body="$(cat "$NOTES_FILE")"
+release_payload="$tmp_dir/release-payload.json"
+jq -n \
+  --arg access_token "$GITEE_TOKEN" \
+  --arg tag_name "$TAG" \
+  --arg target_commitish "main" \
+  --arg name "$TITLE" \
+  --rawfile body "$NOTES_FILE" \
+  '{access_token: $access_token, tag_name: $tag_name, target_commitish: $target_commitish, name: $name, body: $body, prerelease: false}' \
+  > "$release_payload"
+
 if [[ "$status" == "200" ]]; then
   release_id="$(jq -er '.id' "$release_json")"
-  curl --fail --silent --show-error --output "$release_json" \
+  status="$(curl --silent --show-error --output "$release_json" --write-out '%{http_code}' \
     --request PATCH "${API}/releases/${release_id}" \
-    --form-string "access_token=${GITEE_TOKEN}" \
-    --form-string "tag_name=${TAG}" \
-    --form-string "name=${TITLE}" \
-    --form-string "body=${release_body}" \
-    --form-string "prerelease=false"
+    --header "Content-Type: application/json" \
+    --data-binary "@${release_payload}")"
+  expected_status="200"
 elif [[ "$status" == "404" ]]; then
-  curl --fail --silent --show-error --output "$release_json" \
+  status="$(curl --silent --show-error --output "$release_json" --write-out '%{http_code}' \
     --request POST "${API}/releases" \
-    --form-string "access_token=${GITEE_TOKEN}" \
-    --form-string "tag_name=${TAG}" \
-    --form-string "target_commitish=main" \
-    --form-string "name=${TITLE}" \
-    --form-string "body=${release_body}" \
-    --form-string "prerelease=false"
-  release_id="$(jq -er '.id' "$release_json")"
+    --header "Content-Type: application/json" \
+    --data-binary "@${release_payload}")"
+  expected_status="201"
 else
   echo "Unable to query Gitee release ${TAG} (HTTP ${status})." >&2
   cat "$release_json" >&2
   exit 1
 fi
+
+if [[ "$status" != "$expected_status" ]]; then
+  echo "Unable to publish Gitee release ${TAG} (HTTP ${status})." >&2
+  cat "$release_json" >&2
+  exit 1
+fi
+release_id="$(jq -er '.id' "$release_json")"
 
 assets_json="$tmp_dir/assets.json"
 curl --fail --silent --show-error --output "$assets_json" \
@@ -69,7 +79,8 @@ for file in "$WINDOWS_ASSET" "$WINDOWS_CHECKSUM" "$SOURCE_ASSET"; do
   while IFS= read -r asset_id; do
     curl --fail --silent --show-error --output /dev/null \
       --request DELETE "${API}/releases/${release_id}/attach_files/${asset_id}" \
-      --form-string "access_token=${GITEE_TOKEN}"
+      --get \
+      --data-urlencode "access_token=${GITEE_TOKEN}"
   done < <(jq -r --arg name "$(basename "$file")" '.[] | select(.name == $name) | .id' "$assets_json")
 
   curl --fail --silent --show-error --output /dev/null \
@@ -89,7 +100,8 @@ curl --fail --silent --show-error --output "$releases_json" \
 while IFS= read -r old_release_id; do
   curl --fail --silent --show-error --output /dev/null \
     --request DELETE "${API}/releases/${old_release_id}" \
-    --form-string "access_token=${GITEE_TOKEN}"
+    --get \
+    --data-urlencode "access_token=${GITEE_TOKEN}"
 done < <(jq -r 'sort_by(.created_at // .published_at // "") | reverse | .[5:][] | .id' "$releases_json")
 
 echo "Published ${TAG} to Gitee and retained the newest five releases."
