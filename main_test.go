@@ -150,6 +150,11 @@ func TestQueueIdentityEligibility(t *testing.T) {
 	if len(a.state().Queue) != 2 {
 		t.Fatalf("guard-only eligibility accepted a non-guard: %#v", a.state().Queue)
 	}
+
+	a.processMessage(ChatMessage{UID: 6, Username: "异常大航海等级", Text: "排队", GuardLevel: 4})
+	if len(a.state().Queue) != 2 {
+		t.Fatalf("invalid guard level was accepted: %#v", a.state().Queue)
+	}
 }
 
 func TestGuardPriorityRanksAboveGiftPriority(t *testing.T) {

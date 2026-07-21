@@ -15,6 +15,8 @@ let hotkeyValues = {openControl:'', openMiniControl:'', nextQueue:'', clearQueue
 let pendingHotkeys = null;
 let updateCandidate = null;
 let updateModalPhase = 'info';
+let updateReleaseHistory = [];
+let updateRecentReleases = [];
 let scrollGuard = null;
 let scrollGuardTimer = null;
 
@@ -716,6 +718,7 @@ function fillSettings(cfg, force) {
   $('fanMedalQueueEnabled').checked = Boolean(cfg.eligibility?.fanMedalEnabled);
   $('guardQueueEnabled').checked = Boolean(cfg.eligibility?.guardEnabled);
   $('guardPriorityEnabled').checked = Boolean(cfg.eligibility?.guardPriorityEnabled);
+  if ($('updateAutoCheck')) $('updateAutoCheck').checked = cfg.updates?.autoCheck !== false;
 
   const o = cfg.overlay;
   setPair('height', o.height, force);
@@ -1335,33 +1338,149 @@ function closeUpdateModal() {
   $('updateModal').classList.add('hidden');
   updateCandidate = null;
   updateModalPhase = 'info';
+  configureUpdateReleaseHistory(null);
+  $('updateModalSettings').classList.add('hidden');
+}
+
+function releaseVersion(value) {
+  return displayVersion(String(value || '').replace(/^v/i, ''));
+}
+
+function normalizeReleaseEntry(entry) {
+  const version = releaseVersion(entry?.version);
+  if (!version) return null;
+  const headingPattern = /^#{1,6}\s+BiliQueue\s+v[^\r\n]+\r?\n*/i;
+  return {
+    version,
+    notes: String(entry?.notes || '该版本暂未提供更新日志。').replace(headingPattern, '').trim(),
+    source: String(entry?.source || ''),
+  };
+}
+
+function uniqueReleaseEntries(entries) {
+  const seen = new Set();
+  return entries.map(normalizeReleaseEntry).filter(entry => {
+    if (!entry || seen.has(entry.version)) return false;
+    seen.add(entry.version);
+    return true;
+  });
+}
+
+function renderUpdateReleaseEntries(entries) {
+  const body = $('updateModalBody');
+  body.replaceChildren();
+  if (!entries.length) {
+    body.textContent = '暂无更新日志。';
+    return;
+  }
+  entries.forEach(entry => {
+    const section = document.createElement('section');
+    section.className = 'update-release-section';
+    const heading = document.createElement('h3');
+    heading.textContent = `v${entry.version}`;
+    section.appendChild(heading);
+    if (entry.source) {
+      const source = document.createElement('div');
+      source.className = 'update-release-source';
+      source.textContent = `检查来源：${entry.source}`;
+      section.appendChild(source);
+    }
+    const notes = document.createElement('div');
+    notes.className = 'update-release-notes';
+    notes.textContent = entry.notes || '该版本暂未提供更新日志。';
+    section.appendChild(notes);
+    body.appendChild(section);
+  });
+  body.scrollTop = 0;
+}
+
+function selectUpdateRelease(version = '') {
+  const selected = version ? updateReleaseHistory.find(entry => entry.version === version) : null;
+  renderUpdateReleaseEntries(selected ? [selected] : updateRecentReleases);
+  $('updateRecentVersionsBtn').classList.toggle('is-active', !selected);
+  $('updateHistoryList').querySelectorAll('[data-release-version]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.releaseVersion === selected?.version);
+  });
+}
+
+function configureUpdateReleaseHistory(releaseHistory) {
+  const enabled = Boolean(releaseHistory?.all?.length);
+  const layout = $('updateReleaseLayout');
+  layout.classList.toggle('no-history', !enabled);
+  $('updateModal').querySelector('.update-modal-card').classList.toggle('release-notes-mode', enabled);
+  $('updateHistorySidebar').inert = !enabled;
+  $('updateHistorySidebar').setAttribute('aria-hidden', String(!enabled));
+  updateReleaseHistory = enabled ? uniqueReleaseEntries(releaseHistory.all) : [];
+  updateRecentReleases = enabled ? uniqueReleaseEntries(releaseHistory.recent) : [];
+  const list = $('updateHistoryList');
+  list.replaceChildren();
+  list.inert = !enabled;
+  $('updateRecentVersionsBtn').classList.toggle('is-active', enabled);
+  updateReleaseHistory.forEach(entry => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'update-history-item';
+    button.dataset.releaseVersion = entry.version;
+    button.textContent = `v${entry.version}`;
+    list.appendChild(button);
+  });
+  if (enabled) selectUpdateRelease();
 }
 
 function setUpdateModalPhase(phase) {
   updateModalPhase = phase;
-  const hasActions = phase === 'download' || phase === 'ready';
-  $('updateModalActions').classList.toggle('hidden', !hasActions);
+  const isUpdateAction = phase === 'download' || phase === 'ready';
+  $('updateModalActions').classList.remove('hidden');
+  $('updateLaterBtn').classList.toggle('hidden', !isUpdateAction);
   $('updateLaterBtn').textContent = phase === 'ready' ? '下次启动时更新' : '稍后';
-  $('installUpdateBtn').textContent = phase === 'ready' ? '立即更新' : '下载更新';
+  $('installUpdateBtn').textContent = phase === 'ready' ? '立即更新' : (phase === 'download' ? '下载更新' : '确认');
   $('updateLaterBtn').disabled = false;
   $('installUpdateBtn').disabled = false;
 }
 
-function showUpdateModal({title, body, candidate = null, phase = candidate ? 'download' : 'info'}) {
+function showUpdateModal({title, body, candidate = null, phase = candidate ? 'download' : 'info', showAutoCheck = false, releaseHistory = null}) {
   updateCandidate = candidate;
   $('updateModalTitle').textContent = title;
-  $('updateModalBody').textContent = body;
+  configureUpdateReleaseHistory(releaseHistory);
+  if (!releaseHistory) $('updateModalBody').textContent = body;
+  $('updateModalSettings').classList.toggle('hidden', !showAutoCheck);
+  if (showAutoCheck) $('updateAutoCheck').checked = state?.config?.updates?.autoCheck !== false;
   setUpdateModalPhase(phase);
   $('updateModal').classList.remove('hidden');
-  requestAnimationFrame(() => (phase === 'download' || phase === 'ready' ? $('installUpdateBtn') : $('updateModalCloseBtn')).focus({preventScroll:true}));
+  requestAnimationFrame(() => $('installUpdateBtn').focus({preventScroll:true}));
 }
 
 async function showLatestReleaseNotes() {
+  const button = $('releaseNotesBtn');
+  button.disabled = true;
   try {
-    const result = await api('/api/update/notes', {method:'GET'});
-    showUpdateModal({title:`v${displayVersion(result.version)} 更新日志`, body:result.notes || '暂无更新日志。'});
+    const local = await api('/api/update/notes', {method:'GET'});
+    let remote = null;
+    try {
+      remote = await api('/api/update/check');
+    } catch (err) {
+      toast(`检查更新失败：${err.message}`);
+    }
+    const localReleases = uniqueReleaseEntries(Array.isArray(local.releases) ? local.releases : [{version:local.version, notes:local.notes}]);
+    const currentVersion = releaseVersion(local.version);
+    let currentIndex = localReleases.findIndex(entry => entry.version === currentVersion);
+    if (currentIndex < 0) currentIndex = 0;
+    const currentRelease = localReleases[currentIndex] || null;
+    const previousRelease = localReleases[currentIndex + 1] || null;
+    const newRelease = remote?.available ? normalizeReleaseEntry({version:remote.version, notes:remote.notes, source:remote.source}) : null;
+    const allReleases = uniqueReleaseEntries([newRelease, ...localReleases].filter(Boolean));
+    const recentReleases = [newRelease, currentRelease, previousRelease].filter(Boolean);
+    showUpdateModal({
+      title:'更新日志',
+      body:'',
+      candidate:remote?.available ? remote : null,
+      phase:remote?.available ? (state.updateStatus?.preparedVersion === remote.version ? 'ready' : 'download') : 'info',
+      releaseHistory:{all:allReleases, recent:recentReleases},
+    });
   } catch (err) {
     toast(err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1372,7 +1491,7 @@ async function checkForUpdate() {
   try {
     const result = await api('/api/update/check');
     if (!result.available) {
-      showUpdateModal({title:'检查更新', body:`当前已是最新版本。\n\n当前版本：v${displayVersion(state.version)}\n远端最新版本：v${result.version}\n检查来源：${result.source}`});
+      showUpdateModal({title:'检查更新', body:`当前已是最新版本。\n\n当前版本：v${displayVersion(state.version)}\n远端最新版本：v${result.version}\n检查来源：${result.source}`, showAutoCheck:true});
       return;
     }
     const notes = result.notes || '该版本暂未提供更新日志。';
@@ -1381,6 +1500,7 @@ async function checkForUpdate() {
       body:`检查来源：${result.source}\n\n${notes}`,
       candidate:result,
       phase: state.updateStatus?.preparedVersion === result.version ? 'ready' : 'download',
+      showAutoCheck:true,
     });
   } catch (err) {
     await showAppAlert({title:'检查更新失败', message:err.message});
@@ -1429,6 +1549,11 @@ async function init() {
 	$('releaseNotesBtn').addEventListener('click', showLatestReleaseNotes);
 	$('checkUpdateBtn').addEventListener('click', checkForUpdate);
 	$('updateModalCloseBtn').addEventListener('click', closeUpdateModal);
+	$('updateRecentVersionsBtn').addEventListener('click', () => selectUpdateRelease());
+	$('updateHistoryList').addEventListener('click', event => {
+		const button = event.target.closest('[data-release-version]');
+		if (button) selectUpdateRelease(button.dataset.releaseVersion);
+	});
 	$('updateLaterBtn').addEventListener('click', async () => {
 		if (updateModalPhase !== 'ready') {
 			closeUpdateModal();
@@ -1441,6 +1566,7 @@ async function init() {
 			const result = await api('/api/update/defer');
 			updateCandidate = null;
 			setUpdateModalPhase('info');
+			configureUpdateReleaseHistory(null);
 			$('updateModalBody').textContent = `v${result.version} 已准备好，将在下次启动 BiliQueue 时安装。当前直播不会受到影响。`;
 		} catch (err) {
 			button.disabled = false;
@@ -1449,8 +1575,25 @@ async function init() {
 		}
 	});
 	$('updateModal').addEventListener('click', event => { if (event.target === $('updateModal')) closeUpdateModal(); });
+	$('updateAutoCheck').addEventListener('change', async event => {
+		const checkbox = event.currentTarget;
+		const enabled = checkbox.checked;
+		checkbox.disabled = true;
+		try {
+			const nextState = await api('/api/update/settings', {body:{autoCheck:enabled}});
+			render(nextState);
+		} catch (err) {
+			checkbox.checked = !enabled;
+			await showAppAlert({title:'设置失败', message:err.message});
+		} finally {
+			checkbox.disabled = false;
+		}
+	});
 	$('installUpdateBtn').addEventListener('click', async () => {
-		if (!updateCandidate) return;
+		if (!updateCandidate) {
+			closeUpdateModal();
+			return;
+		}
 		const button = $('installUpdateBtn');
 		button.disabled = true;
 		$('updateLaterBtn').disabled = true;
@@ -1459,6 +1602,7 @@ async function init() {
 				button.textContent = '正在下载';
 				const result = await api('/api/update/download');
 				setUpdateModalPhase('ready');
+				configureUpdateReleaseHistory(null);
 				$('updateModalBody').textContent = `v${result.version} 更新包已下载并解压完成。\n\n请选择立即更新，或安排在下次启动 BiliQueue 时更新。`;
 				return;
 			}
@@ -1466,6 +1610,7 @@ async function init() {
 			await api('/api/update/apply');
 			updateCandidate = null;
 			setUpdateModalPhase('info');
+			configureUpdateReleaseHistory(null);
 			$('updateModalBody').textContent = 'BiliQueue 正在退出、替换并重新启动。';
 		} catch (err) {
 			button.disabled = false;

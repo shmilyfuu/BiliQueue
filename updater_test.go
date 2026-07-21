@@ -93,6 +93,17 @@ func TestFetchReleaseLoadsGiteeAttachments(t *testing.T) {
 	}
 }
 
+func TestFetchUpdateChecksumRejectsInvalidResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not-a-sha256"))
+	}))
+	defer server.Close()
+
+	if _, err := fetchUpdateChecksum(context.Background(), server.URL); err == nil {
+		t.Fatal("expected invalid checksum response to be rejected")
+	}
+}
+
 func serverURL(r *http.Request) string {
 	return "http://" + r.Host
 }
@@ -127,6 +138,23 @@ func TestLatestEmbeddedReleaseNotesOnlyReturnsFirstSection(t *testing.T) {
 	t.Cleanup(func() { releaseNotesMarkdown = old })
 	if got := latestEmbeddedReleaseNotes(); got != "# v2\n\nlatest" {
 		t.Fatalf("unexpected latest notes: %q", got)
+	}
+}
+
+func TestEmbeddedReleaseNotesReturnsVersionedHistory(t *testing.T) {
+	old := releaseNotesMarkdown
+	releaseNotesMarkdown = "# BiliQueue v2.0.0\n\nlatest\n---\n## BiliQueue v1.5.0\n\nold\n---\nnotes without a version"
+	t.Cleanup(func() { releaseNotesMarkdown = old })
+
+	got := embeddedReleaseNotes()
+	if len(got) != 2 {
+		t.Fatalf("len(embeddedReleaseNotes())=%d want=2", len(got))
+	}
+	if got[0].Version != "2.0.0" || got[0].Notes != "latest" {
+		t.Fatalf("unexpected latest release: %#v", got[0])
+	}
+	if got[1].Version != "1.5.0" || got[1].Notes != "old" {
+		t.Fatalf("unexpected previous release: %#v", got[1])
 	}
 }
 

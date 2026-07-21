@@ -31,6 +31,7 @@ var (
 	giteeLatestReleaseURL  = "https://gitee.com/api/v5/repos/shmilyfuu/BiliQueue/releases/latest"
 	githubLatestReleaseURL = "https://api.github.com/repos/shmilyfuu/BiliQueue/releases/latest"
 	versionPattern         = regexp.MustCompile(`(?i)^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9a-z.-]+))?$`)
+	releaseNoteHeading     = regexp.MustCompile(`(?im)^#{1,6}\s+BiliQueue\s+v([0-9][0-9a-z.-]*)\s*$`)
 	updateExecutablePath   = os.Executable
 )
 
@@ -59,6 +60,11 @@ type UpdateStatus struct {
 	Latest          *UpdateInfo `json:"latest,omitempty"`
 	PreparedVersion string      `json:"preparedVersion,omitempty"`
 	Deferred        bool        `json:"deferred,omitempty"`
+}
+
+type embeddedReleaseNote struct {
+	Version string `json:"version"`
+	Notes   string `json:"notes"`
 }
 
 type releaseAsset struct {
@@ -100,6 +106,24 @@ func latestEmbeddedReleaseNotes() string {
 		notes = strings.TrimSpace(notes[:index])
 	}
 	return notes
+}
+
+func embeddedReleaseNotes() []embeddedReleaseNote {
+	notes := strings.TrimSpace(strings.ReplaceAll(releaseNotesMarkdown, "\r\n", "\n"))
+	sections := strings.Split(notes, "\n---\n")
+	releases := make([]embeddedReleaseNote, 0, len(sections))
+	for _, section := range sections {
+		section = strings.TrimSpace(section)
+		match := releaseNoteHeading.FindStringSubmatchIndex(section)
+		if match == nil {
+			continue
+		}
+		releases = append(releases, embeddedReleaseNote{
+			Version: section[match[2]:match[3]],
+			Notes:   strings.TrimSpace(section[match[1]:]),
+		})
+	}
+	return releases
 }
 
 func parseVersion(value string) ([3]int, string, bool) {
@@ -502,7 +526,11 @@ func (a *App) downloadAndPrepareUpdate(ctx context.Context, info UpdateInfo) (pr
 	zipPath := filepath.Join(root, "package.zip")
 	expectedSHA := info.SHA256
 	if expectedSHA == "" && info.ChecksumURL != "" {
-		expectedSHA, _ = fetchUpdateChecksum(ctx, info.ChecksumURL)
+		expectedSHA, err = fetchUpdateChecksum(ctx, info.ChecksumURL)
+		if err != nil {
+			_ = os.RemoveAll(root)
+			return preparedUpdate{}, fmt.Errorf("读取更新包校验文件：%w", err)
+		}
 	}
 	if err := downloadUpdateFile(ctx, info.DownloadURL, zipPath, expectedSHA); err != nil {
 		_ = os.RemoveAll(root)

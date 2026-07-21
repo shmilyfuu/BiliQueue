@@ -628,7 +628,7 @@ func parseDanmuMessage(obj map[string]any) (ChatMessage, bool) {
 			}
 			guardLevel := 0
 			if len(info) > 7 {
-				guardLevel = int(numberToInt64(info[7]))
+				guardLevel = normalizeGuardLevel(int(numberToInt64(info[7])))
 			}
 			avatar := extractDanmuAvatar(info)
 			if uid != 0 && username != "" {
@@ -655,6 +655,7 @@ func parseDanmuMessage(obj map[string]any) (ChatMessage, bool) {
 			if guardLevel == 0 {
 				guardLevel = int(nestedInt64(data, "sender_uinfo", "guard", "level"))
 			}
+			guardLevel = normalizeGuardLevel(guardLevel)
 			medalLevel := int(firstInt64(data, "fans_medal_level", "medal_level"))
 			medalCurrentRoom := medalLevel > 0
 			if raw, exists := data["fans_medal_wearing_status"]; exists {
@@ -758,6 +759,7 @@ func parseGiftMessage(obj map[string]any) (GiftMessage, bool) {
 	if guardLevel == 0 {
 		guardLevel = int(nestedInt64(data, "sender_uinfo", "guard", "level"))
 	}
+	guardLevel = normalizeGuardLevel(guardLevel)
 	return GiftMessage{
 		EventID: eventID, UID: uid, Username: username, Avatar: avatar,
 		GiftID: giftID, GiftName: giftName, GiftIcon: giftIcon, Num: num,
@@ -788,6 +790,17 @@ func parseGuardMessage(obj map[string]any) (GuardMessage, bool) {
 	return GuardMessage{
 		UID: uid, Username: username, Avatar: normalizeBiliImageURL(avatar), GuardLevel: guardLevel,
 	}, true
+}
+
+func validGuardLevel(level int) bool {
+	return level >= 1 && level <= 3
+}
+
+func normalizeGuardLevel(level int) int {
+	if !validGuardLevel(level) {
+		return 0
+	}
+	return level
 }
 
 func nestedString(root map[string]any, keys ...string) string {

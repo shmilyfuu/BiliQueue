@@ -242,7 +242,7 @@ type App struct {
 	updateInstallMu      sync.Mutex
 }
 
-const version = "0.1.16"
+const version = "0.1.17"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
@@ -1079,6 +1079,7 @@ func (a *App) loadTodayQueue() {
 }
 
 func (a *App) addUser(msg ChatMessage) (bool, string) {
+	msg.GuardLevel = normalizeGuardLevel(msg.GuardLevel)
 	a.mu.Lock()
 	if a.paused {
 		a.mu.Unlock()
@@ -1216,7 +1217,7 @@ func (a *App) recordGiftForQueuedUser(gift GiftMessage, priority bool) bool {
 	if gift.Avatar != "" {
 		user.Avatar = gift.Avatar
 	}
-	if gift.GuardLevel > 0 {
+	if validGuardLevel(gift.GuardLevel) {
 		user.GuardLevel = gift.GuardLevel
 	}
 	user.HasGift = true
@@ -1243,6 +1244,7 @@ func (a *App) recordGiftForQueuedUser(gift GiftMessage, priority bool) bool {
 }
 
 func (a *App) enqueueGiftSender(gift GiftMessage, priority bool) bool {
+	gift.GuardLevel = normalizeGuardLevel(gift.GuardLevel)
 	a.mu.Lock()
 	if a.paused {
 		a.mu.Unlock()
@@ -1334,6 +1336,10 @@ func (a *App) waitingPriorityClassLocked(user QueueUser) int {
 }
 
 func (a *App) processGuard(guard GuardMessage) {
+	guard.GuardLevel = normalizeGuardLevel(guard.GuardLevel)
+	if guard.GuardLevel == 0 {
+		return
+	}
 	a.mu.Lock()
 	changed := false
 	for i := range a.queue {
@@ -1437,7 +1443,7 @@ func (a *App) canJoinByIdentity(msg ChatMessage) bool {
 		}
 		fanEligible = currentRoomMedal
 	}
-	guardEligible := cfg.GuardEnabled && msg.GuardLevel > 0
+	guardEligible := cfg.GuardEnabled && validGuardLevel(msg.GuardLevel)
 	return fanEligible || guardEligible
 }
 
@@ -1569,7 +1575,11 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"version": version, "notes": latestEmbeddedReleaseNotes()})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"version":  version,
+			"notes":    latestEmbeddedReleaseNotes(),
+			"releases": embeddedReleaseNotes(),
+		})
 	})
 	mux.HandleFunc("/api/update/check", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

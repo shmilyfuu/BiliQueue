@@ -425,8 +425,19 @@
   <div id="updateModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
     <div class="modal-card update-modal-card">
       <div class="modal-head"><h2 id="updateModalTitle">更新日志</h2><button id="updateModalCloseBtn" type="button" class="btn small ghost">关闭</button></div>
-      <div id="updateModalBody" class="update-modal-body"></div>
-      <div id="updateModalActions" class="confirm-modal-actions hidden">
+      <div id="updateReleaseLayout" class="update-release-layout no-history">
+        <aside id="updateHistorySidebar" class="update-history-sidebar" aria-label="历史更新日志">
+          <button id="updateRecentVersionsBtn" type="button" class="update-history-item is-active">最近版本</button>
+          <div id="updateHistoryList" class="update-history-list"></div>
+        </aside>
+        <div class="update-release-content">
+          <div id="updateModalBody" class="update-modal-body"></div>
+        </div>
+      </div>
+      <div id="updateModalSettings" class="update-modal-settings hidden">
+        <label class="checkbox-row"><input id="updateAutoCheck" type="checkbox">自动检查更新</label>
+      </div>
+      <div id="updateModalActions" class="confirm-modal-actions update-modal-actions hidden">
         <button id="updateLaterBtn" type="button" class="btn ghost">稍后</button>
         <button id="installUpdateBtn" type="button" class="btn primary">下载更新</button>
       </div>
