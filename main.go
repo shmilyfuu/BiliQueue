@@ -242,7 +242,7 @@ type App struct {
 	updateInstallMu      sync.Mutex
 }
 
-const version = "0.1.17"
+const version = "0.1.18"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
@@ -2358,6 +2358,7 @@ func main() {
 	updateParentPID := flag.Int("update-parent-pid", 0, "internal update parent process id")
 	updateCleanupRoot := flag.String("update-cleanup-root", "", "internal update cleanup directory")
 	updateCleanupBackup := flag.String("update-cleanup-backup", "", "internal update backup path")
+	updateCompletedVersion := flag.String("update-completed-version", "", "internal completed update notification version")
 	flag.Parse()
 	if *updateHelper {
 		if err := runUpdateHelper(*updateTarget, *updatePackageRoot, *updateParentPID, *updateRestartFile); err != nil {
@@ -2381,6 +2382,7 @@ func main() {
 	}
 
 	app := newAppWithFonts(*dataDir, *fontsDir)
+	preloadAppDialogHost()
 	listen := chooseStartupListenAddress(app, *listenFlag)
 	if release, already := acquireSingleInstance(*instanceID); already {
 		log.Printf("another instance is already running")
@@ -2418,6 +2420,7 @@ func main() {
 	app.config.ListenAddress = listen
 	app.mu.Unlock()
 	app.saveConfig()
+	preloadMiniControlWindow(app)
 
 	controlURL := urlForListen(listen, "/control")
 	overlayURL := urlForListen(listen, "/overlay")
@@ -2437,6 +2440,9 @@ func main() {
 	}
 
 	if runtime.GOOS == "windows" {
+		if completedVersion := strings.TrimSpace(*updateCompletedVersion); completedVersion != "" {
+			go notifyUpdateCompleted(completedVersion)
+		}
 		if err := runTray(app, controller, *dataDir, !*noTray); err != nil {
 			log.Printf("windows message service: %v", err)
 			showErrorDialog("BiliQueue Windows 服务启动失败", err.Error())

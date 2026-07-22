@@ -117,8 +117,23 @@ func openMiniControlWindow(app *App) error {
 	nativeMiniWindow.opening = true
 	nativeMiniWindow.visible = true
 	nativeMiniWindow.mu.Unlock()
-	go runMiniControlWindow(app)
+	go runMiniControlWindow(app, true)
 	return nil
+}
+
+func preloadMiniControlWindow(app *App) {
+	if app == nil {
+		return
+	}
+	nativeMiniWindow.mu.Lock()
+	if nativeMiniWindow.view != nil || nativeMiniWindow.opening {
+		nativeMiniWindow.mu.Unlock()
+		return
+	}
+	nativeMiniWindow.opening = true
+	nativeMiniWindow.visible = false
+	nativeMiniWindow.mu.Unlock()
+	go runMiniControlWindow(app, false)
 }
 
 func toggleMiniControlWindow(app *App) error {
@@ -165,7 +180,7 @@ func showMiniControlView(view webview2.WebView, visible bool) {
 	})
 }
 
-func runMiniControlWindow(app *App) {
+func runMiniControlWindow(app *App, promptWhenUnavailable bool) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -175,7 +190,9 @@ func runMiniControlWindow(app *App) {
 			log.Printf("detect WebView2 runtime: %v", err)
 		}
 		markMiniWindowClosed()
-		handleMissingWebView2(app)
+		if promptWhenUnavailable {
+			handleMissingWebView2(app)
+		}
 		return
 	}
 
@@ -184,7 +201,10 @@ func runMiniControlWindow(app *App) {
 		log.Printf("create WebView2 data directory: %v", err)
 	}
 	windowTitle := "BiliQueue 简易控制"
-	loadingHwnd := createMiniLoadingWindow(windowTitle)
+	var loadingHwnd uintptr
+	if promptWhenUnavailable {
+		loadingHwnd = createMiniLoadingWindow(windowTitle)
+	}
 	view := webview2.NewWithOptions(webview2.WebViewOptions{
 		AutoFocus: true,
 		DataPath:  dataPath,
@@ -198,7 +218,9 @@ func runMiniControlWindow(app *App) {
 	if view == nil {
 		destroyMiniLoadingWindow(loadingHwnd)
 		markMiniWindowClosed()
-		handleMissingWebView2(app)
+		if promptWhenUnavailable {
+			handleMissingWebView2(app)
+		}
 		return
 	}
 

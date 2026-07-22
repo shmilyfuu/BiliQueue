@@ -17,6 +17,8 @@ let updateCandidate = null;
 let updateModalPhase = 'info';
 let updateReleaseHistory = [];
 let updateRecentReleases = [];
+let updateInstallTarget = '';
+let updateRestartMonitor = null;
 let scrollGuard = null;
 let scrollGuardTimer = null;
 
@@ -538,6 +540,7 @@ function render(nextState) {
 		$('checkUpdateBtn').disabled = Boolean(updateStatus.checking || updateStatus.downloading || updateStatus.installing);
 		$('checkUpdateBtn').textContent = updateStatus.installing ? '正在更新' : (updateStatus.downloading ? '正在下载' : (updateStatus.checking ? '正在检查' : '检查更新'));
 	}
+	if (updateModalPhase === 'download-progress') renderUpdateTransferProgress(updateStatus);
   $('statusPill').className = `status-pill ${status}`;
   const labels = {connected:'已连接',connecting:'正在连接',reconnecting:'正在重连',error:'连接失败',disconnected:'未连接'};
   $('statusText').textContent = labels[status] || status;
@@ -1334,8 +1337,109 @@ async function changeListenAddress() {
   }
 }
 
+function formatUpdateBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let size = bytes / 1024;
+  let unit = units[0];
+  for (let index = 1; index < units.length && size >= 1024; index += 1) {
+    size /= 1024;
+    unit = units[index];
+  }
+  return `${size >= 100 ? size.toFixed(0) : size.toFixed(1)} ${unit}`;
+}
+
+function setUpdateProgressValue(percent = null) {
+  const track = $('updateProgressTrack');
+  const bar = $('updateProgressBar');
+  const hasPercent = Number.isFinite(percent);
+  track.classList.toggle('indeterminate', !hasPercent);
+  bar.style.width = hasPercent ? `${Math.max(0, Math.min(100, percent))}%` : '';
+  $('updateProgressPercent').textContent = hasPercent ? `${Math.round(percent)}%` : '';
+}
+
+function showUpdateProgressPanel(mode) {
+  $('updateModalBody').classList.add('hidden');
+  $('updateProgressPanel').classList.remove('hidden');
+  const downloadMode = mode === 'download';
+  $('updateProgressTransferRow').classList.toggle('hidden', !downloadMode);
+  $('updateProgressSpeedRow').classList.toggle('hidden', !downloadMode);
+  $('updateProgressPathRow').classList.toggle('hidden', !downloadMode);
+}
+
+function hideUpdateProgressPanel() {
+  $('updateProgressPanel').classList.add('hidden');
+  $('updateModalBody').classList.remove('hidden');
+}
+
+function renderUpdateTransferProgress(status = {}) {
+  showUpdateProgressPanel('download');
+  const phases = {
+    preparing: '准备下载',
+    checksum: '读取校验文件',
+    downloading: '下载更新包',
+    verifying: '校验更新包',
+    extracting: '解压更新包',
+    ready: '准备完成',
+    error: '准备失败',
+  };
+  const downloaded = Math.max(0, Number(status.downloadedBytes) || 0);
+  const total = Math.max(0, Number(status.totalBytes) || 0);
+  const percent = total > 0 ? downloaded / total * 100 : null;
+  $('updateProgressMessage').textContent = status.message || '正在准备更新';
+  $('updateProgressStage').textContent = phases[status.phase] || status.phase || '准备更新';
+  $('updateProgressTransfer').textContent = total > 0
+    ? `${formatUpdateBytes(downloaded)} / ${formatUpdateBytes(total)}`
+    : (downloaded > 0 ? formatUpdateBytes(downloaded) : '正在获取文件大小');
+  $('updateProgressSpeed').textContent = Number(status.bytesPerSecond) > 0 ? `${formatUpdateBytes(status.bytesPerSecond)}/s` : '—';
+  $('updateProgressPath').textContent = status.downloadPath || '正在确定下载位置';
+  $('updateProgressHint').textContent = '关闭此窗口不会取消已经开始的下载任务。';
+  setUpdateProgressValue(status.phase === 'ready' ? 100 : percent);
+}
+
+function renderInstallProgress(stage, message, percent = null, complete = false) {
+  showUpdateProgressPanel('install');
+  $('updateProgressMessage').textContent = complete ? '更新完成' : '正在更新';
+  $('updateProgressStage').textContent = stage;
+  $('updateProgressHint').textContent = complete
+    ? '更新已经完成，控制台网页即将自动刷新。'
+    : '点击确认或关闭弹窗不影响更新。更新结束后会自动刷新控制台网页。';
+  setUpdateProgressValue(percent);
+}
+
+function monitorUpdateRestart(targetVersion) {
+  if (updateRestartMonitor) clearTimeout(updateRestartMonitor);
+  updateInstallTarget = targetVersion;
+  const startedAt = Date.now();
+  let disconnected = false;
+  const poll = async () => {
+    try {
+      const response = await fetch(`/api/state?update-reconnect=${Date.now()}`, {cache:'no-store'});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const nextState = await response.json();
+      if (String(nextState.version || '') === String(targetVersion || '')) {
+        renderInstallProgress('新版本已启动', '更新完成', 100, true);
+        updateRestartMonitor = setTimeout(() => location.reload(), 1200);
+        return;
+      }
+      renderInstallProgress(disconnected ? '等待新版本启动' : '正在退出旧版本', '正在更新', disconnected ? 82 : 28);
+    } catch {
+      disconnected = true;
+      renderInstallProgress('正在替换程序并重启服务', '正在更新', null);
+    }
+    if (Date.now() - startedAt > 120000) {
+      renderInstallProgress('等待服务恢复超时，请查看运行日志', '更新仍可能在后台继续', null);
+      return;
+    }
+    updateRestartMonitor = setTimeout(poll, 700);
+  };
+  updateRestartMonitor = setTimeout(poll, 500);
+}
+
 function closeUpdateModal() {
   $('updateModal').classList.add('hidden');
+  hideUpdateProgressPanel();
   updateCandidate = null;
   updateModalPhase = 'info';
   configureUpdateReleaseHistory(null);
@@ -1442,6 +1546,7 @@ function showUpdateModal({title, body, candidate = null, phase = candidate ? 'do
   updateCandidate = candidate;
   $('updateModalTitle').textContent = title;
   configureUpdateReleaseHistory(releaseHistory);
+  hideUpdateProgressPanel();
   if (!releaseHistory) $('updateModalBody').textContent = body;
   $('updateModalSettings').classList.toggle('hidden', !showAutoCheck);
   if (showAutoCheck) $('updateAutoCheck').checked = state?.config?.updates?.autoCheck !== false;
@@ -1590,6 +1695,10 @@ async function init() {
 		}
 	});
 	$('installUpdateBtn').addEventListener('click', async () => {
+		if (updateModalPhase === 'download-progress' || updateModalPhase === 'install-progress' || updateModalPhase === 'install-complete') {
+			closeUpdateModal();
+			return;
+		}
 		if (!updateCandidate) {
 			closeUpdateModal();
 			return;
@@ -1599,22 +1708,27 @@ async function init() {
 		$('updateLaterBtn').disabled = true;
 		try {
 			if (updateModalPhase === 'download') {
-				button.textContent = '正在下载';
+				setUpdateModalPhase('download-progress');
+				configureUpdateReleaseHistory(null);
+				renderUpdateTransferProgress(state?.updateStatus || {});
 				const result = await api('/api/update/download');
 				setUpdateModalPhase('ready');
 				configureUpdateReleaseHistory(null);
+				hideUpdateProgressPanel();
 				$('updateModalBody').textContent = `v${result.version} 更新包已下载并解压完成。\n\n请选择立即更新，或安排在下次启动 BiliQueue 时更新。`;
 				return;
 			}
-			button.textContent = '正在更新';
+			const targetVersion = updateCandidate.version;
+			setUpdateModalPhase('install-progress');
+			configureUpdateReleaseHistory(null);
+			renderInstallProgress('正在启动更新助手', '正在更新', 12);
 			await api('/api/update/apply');
 			updateCandidate = null;
-			setUpdateModalPhase('info');
-			configureUpdateReleaseHistory(null);
-			$('updateModalBody').textContent = 'BiliQueue 正在退出、替换并重新启动。';
+			renderInstallProgress('正在退出旧版本', '正在更新', 28);
+			monitorUpdateRestart(targetVersion);
 		} catch (err) {
 			button.disabled = false;
-			button.textContent = updateModalPhase === 'ready' ? '立即更新' : '下载更新';
+			button.textContent = updateModalPhase === 'ready' ? '立即更新' : (updateModalPhase === 'download' ? '下载更新' : '确认');
 			$('updateLaterBtn').disabled = false;
 			await showAppAlert({title:'更新失败', message:err.message});
 		}

@@ -14,4 +14,6 @@ func miniControlWindowState() MiniControlWindowState { return MiniControlWindowS
 
 func refreshMiniControlWindow(app *App) {}
 
+func preloadMiniControlWindow(app *App) {}
+
 func closeMiniControlWindow() {}

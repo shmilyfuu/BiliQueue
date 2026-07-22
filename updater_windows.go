@@ -85,15 +85,15 @@ func startUpdateHelper(prepared preparedUpdate, target string, spec updateRestar
 }
 
 func notifyUpdateAvailable(app *App, info UpdateInfo) {
-	message := fmt.Sprintf("检测到新版本 v%s（%s）。\n\n是否现在下载更新包？下载不会中断当前直播。", info.Version, info.Source)
-	if !showStyledConfirmDialog("发现新版本", message) {
+	message := fmt.Sprintf("检测到新版本 v%s。\n\n当前版本：v%s\n检查来源：%s\n\n下载更新包不会中断当前直播。", info.Version, version, info.Source)
+	if !showStyledChoiceDialog("发现新版本", message, "下载更新", "稍后") {
 		return
 	}
 	if _, err := app.downloadLatestUpdate(context.Background()); err != nil {
 		showErrorDialog("更新失败", err.Error())
 		return
 	}
-	if showStyledChoiceDialog("更新已下载", "更新包已经下载并解压完成。请选择更新时间。", "立即更新", "下次启动时") {
+	if showStyledChoiceDialog("更新已下载", "更新包已经下载并解压完成。请选择更新时间。", "立即更新", "下次启动时更新") {
 		if err := app.applyPreparedUpdate(); err != nil {
 			showErrorDialog("更新失败", err.Error())
 		}
@@ -126,6 +126,12 @@ func launchDeferredUpdateIfPresent() (bool, error) {
 }
 
 func runUpdateHelper(target, packageRoot string, parentPID int, restartFile string) error {
+	return runUpdateHelperProgressWindow(version, func(report func(string, int)) error {
+		return runUpdateHelperCore(target, packageRoot, parentPID, restartFile, report)
+	})
+}
+
+func runUpdateHelperCore(target, packageRoot string, parentPID int, restartFile string, report func(string, int)) error {
 	_ = parentPID
 	target = filepath.Clean(target)
 	packageRoot = filepath.Clean(packageRoot)
@@ -144,6 +150,7 @@ func runUpdateHelper(target, packageRoot string, parentPID int, restartFile stri
 	temporary := target + ".new"
 	_ = os.Remove(backup)
 	_ = os.Remove(temporary)
+	report("正在等待旧版本退出", 18)
 	var renameErr error
 	for attempt := 0; attempt < 120; attempt++ {
 		renameErr = os.Rename(target, backup)
@@ -155,6 +162,7 @@ func runUpdateHelper(target, packageRoot string, parentPID int, restartFile stri
 	if renameErr != nil {
 		return fmt.Errorf("等待旧程序退出并备份失败：%w", renameErr)
 	}
+	report("已备份旧版本，正在写入新程序", 42)
 	restore := func() {
 		_ = os.Remove(temporary)
 		_ = os.Remove(target)
@@ -168,12 +176,18 @@ func runUpdateHelper(target, packageRoot string, parentPID int, restartFile stri
 		restore()
 		return fmt.Errorf("替换主程序：%w", err)
 	}
+	report("主程序已替换，正在更新资源文件", 68)
 	if err := copyReleaseSupportFiles(packageRoot, filepath.Dir(target)); err != nil {
 		restore()
 		return fmt.Errorf("更新随包资源：%w", err)
 	}
 	args := append([]string{}, spec.Args...)
-	args = append(args, "-update-cleanup-root", filepath.Dir(filepath.Clean(restartFile)), "-update-cleanup-backup", backup)
+	args = append(args,
+		"-update-cleanup-root", filepath.Dir(filepath.Clean(restartFile)),
+		"-update-cleanup-backup", backup,
+		"-update-completed-version", version,
+	)
+	report("正在启动新版本", 88)
 	cmd := exec.Command(target, args...)
 	if spec.WorkingDir != "" {
 		cmd.Dir = spec.WorkingDir
@@ -269,7 +283,7 @@ func filterUpdaterArgs(args []string) []string {
 		switch args[index] {
 		case "-update-helper":
 			continue
-		case "-update-target", "-update-package-root", "-update-restart-file", "-update-parent-pid", "-update-cleanup-root", "-update-cleanup-backup":
+		case "-update-target", "-update-package-root", "-update-restart-file", "-update-parent-pid", "-update-cleanup-root", "-update-cleanup-backup", "-update-completed-version":
 			index++
 			continue
 		default:

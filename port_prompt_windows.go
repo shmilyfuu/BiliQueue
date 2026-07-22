@@ -65,7 +65,7 @@ type promptDialog struct {
 	closed   chan struct{}
 }
 
-func promptListenAddress(title, message, defaultValue string) (string, bool) {
+func promptListenAddressNative(title, message, defaultValue string) (string, bool) {
 	promptMu.Lock()
 	if activePrompt != nil && !activePrompt.done {
 		if activePrompt.hwnd != 0 {
@@ -278,6 +278,7 @@ func promptClose(hwnd uintptr) {
 
 func closeActivePrompt() {
 	closeWebView2MissingDialog()
+	closeActiveWebDialog()
 
 	promptMu.Lock()
 	d := activePrompt
@@ -322,7 +323,7 @@ func showStyledConfirmDialog(title, message string) bool {
 	return showStyledChoiceDialog(title, message, "确定", "取消")
 }
 
-func showStyledChoiceDialog(title, message, confirmText, cancelText string) bool {
+func showStyledChoiceDialogNative(title, message, confirmText, cancelText string) bool {
 	confirmMu.Lock()
 	if activeConfirm != nil && !activeConfirm.done {
 		if activeConfirm.hwnd != 0 {
@@ -416,9 +417,9 @@ func createConfirmChildren(hwnd, hInstance uintptr, message, confirmLabel, cance
 	msgCtl, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(msg)), wsChild|wsVisible|ssLeft,
 		72, 28, 360, 42, hwnd, 0, hInstance, 0)
 	okBtn, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(buttonClass)), uintptr(unsafe.Pointer(okText)), wsChild|wsVisible|wsTabStop|bsDefPushButton,
-		250, 106, 84, 30, hwnd, promptIDOK, hInstance, 0)
+		144, 106, 140, 30, hwnd, promptIDOK, hInstance, 0)
 	cancelBtn, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(buttonClass)), uintptr(unsafe.Pointer(cancelText)), wsChild|wsVisible|wsTabStop,
-		348, 106, 84, 30, hwnd, promptIDCancel, hInstance, 0)
+		292, 106, 140, 30, hwnd, promptIDCancel, hInstance, 0)
 	for _, ctl := range []uintptr{msgCtl, okBtn, cancelBtn} {
 		if ctl != 0 && font != 0 {
 			procPromptSendMessageW.Call(ctl, wmSetFont, font, 1)
@@ -474,7 +475,7 @@ var (
 	activeInfo *infoDialog
 )
 
-func showStyledInfoDialog(title, message string) {
+func showStyledInfoDialogNative(title, message string) {
 	infoMu.Lock()
 	if activeInfo != nil && !activeInfo.done {
 		if activeInfo.hwnd != 0 {

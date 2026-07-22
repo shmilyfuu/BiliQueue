@@ -41,11 +41,14 @@ const (
 	tpmReturnCmd   = 0x0100
 
 	nimAdd    = 0x00000000
+	nimModify = 0x00000001
 	nimDelete = 0x00000002
 
 	nifMessage = 0x00000001
 	nifIcon    = 0x00000002
 	nifTip     = 0x00000004
+	nifInfo    = 0x00000010
+	niifInfo   = 0x00000001
 
 	idiApplication = 32512
 
@@ -156,13 +159,21 @@ type msg struct {
 }
 
 type notifyIconData struct {
-	cbSize           uint32
-	hWnd             uintptr
-	uID              uint32
-	uFlags           uint32
-	uCallbackMessage uint32
-	hIcon            uintptr
-	szTip            [128]uint16
+	cbSize            uint32
+	hWnd              uintptr
+	uID               uint32
+	uFlags            uint32
+	uCallbackMessage  uint32
+	hIcon             uintptr
+	szTip             [128]uint16
+	dwState           uint32
+	dwStateMask       uint32
+	szInfo            [256]uint16
+	uTimeoutOrVersion uint32
+	szInfoTitle       [64]uint16
+	dwInfoFlags       uint32
+	guidItem          [16]byte
+	hBalloonIcon      uintptr
 }
 
 type trayApp struct {
@@ -369,6 +380,36 @@ func (t *trayApp) addIcon() error {
 		return fmt.Errorf("Shell_NotifyIconW add: %w", err)
 	}
 	return nil
+}
+
+func (t *trayApp) showNotification(title, message string) bool {
+	if t == nil || !t.iconAdded || t.hwnd == 0 {
+		return false
+	}
+	var nid notifyIconData
+	nid.cbSize = uint32(unsafe.Sizeof(nid))
+	nid.hWnd = t.hwnd
+	nid.uID = 1
+	nid.uFlags = nifInfo
+	nid.dwInfoFlags = niifInfo
+	copy(nid.szInfoTitle[:], syscall.StringToUTF16(title))
+	copy(nid.szInfo[:], syscall.StringToUTF16(message))
+	result, _, _ := procShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid)))
+	return result != 0
+}
+
+func notifyUpdateCompleted(completedVersion string) {
+	message := "已更新至 v" + completedVersion + "，可以打开控制台网页查看。"
+	for attempt := 0; attempt < 40; attempt++ {
+		if tray := getActiveTray(); tray != nil && tray.showNotification(
+			"BiliQueue 更新完成",
+			message,
+		) {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	showInfoDialog("BiliQueue 更新完成", message)
 }
 
 func (t *trayApp) removeIcon() {
@@ -670,11 +711,11 @@ func (t *trayApp) changePort() {
 	}
 	state, err := t.controller.ChangeListenAddress(input)
 	if err != nil {
-		messageBox("啊哦！", "端口修改失败："+err.Error(), mbOK|mbIconError|mbSetForeground)
+		showErrorDialog("啊哦！", "端口修改失败："+err.Error())
 		return
 	}
 	_ = copyTextToClipboard(state.OverlayURL)
-	messageBox("BiliQueue", "端口已修改。浏览器源地址已复制：\n"+state.OverlayURL, mbOK|mbSetForeground)
+	showInfoDialog("BiliQueue", "端口已修改。浏览器源地址已复制：\n"+state.OverlayURL)
 }
 
 func (t *trayApp) shutdownServer() {
@@ -736,7 +777,7 @@ func messageBox(title, text string, flags uintptr) int {
 }
 
 func showErrorDialog(title, message string) {
-	messageBox(title, message, mbOK|mbIconError|mbSetForeground)
+	showStyledErrorDialog(title, message)
 }
 
 func showInfoDialog(title, message string) {

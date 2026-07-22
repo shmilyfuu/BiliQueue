@@ -1751,6 +1751,7 @@ button { cursor: pointer; }
   line-height:1.75;
   overflow-wrap:anywhere;
 }
+.update-modal-body.hidden { display:none; }
 .release-notes-mode .update-modal-body { flex:1; min-height:0; max-height:none; }
 .update-release-layout.no-history .update-modal-body { white-space:pre-wrap; }
 .update-release-section { padding:6px 8px 18px; border-bottom:1px solid #2c3240; }
@@ -1779,7 +1780,30 @@ button { cursor: pointer; }
   accent-color:#6577ed;
 }
 .update-modal-actions { padding-top:14px; border-top:1px solid #373f4f; }
+.update-modal-actions .btn {
+  width:auto;
+  min-width:108px;
+  padding-right:16px;
+  padding-left:16px;
+  white-space:nowrap;
+}
+.update-modal-actions #updateLaterBtn { min-width:148px; }
 .update-modal-actions .btn.hidden { display:none; }
+.update-progress-panel { min-height:240px; padding:8px 2px 4px; }
+.update-progress-panel.hidden { display:none; }
+.update-progress-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
+.update-progress-heading strong { min-width:0; color:#fff; font-size:16px; }
+.update-progress-heading span { flex:none; color:#b7c3fc; font-size:13px; }
+.update-progress-track { position:relative; height:10px; overflow:hidden; border:1px solid #373f4f; border-radius:5px; background:#11141b; }
+.update-progress-track span { display:block; width:0; height:100%; border-radius:4px; background:#6577ed; transition:width .2s ease; }
+.update-progress-track.indeterminate span { width:34%; animation:update-progress-slide 1.15s ease-in-out infinite; }
+@keyframes update-progress-slide { from { transform:translateX(-110%); } to { transform:translateX(300%); } }
+.update-progress-details { display:grid; gap:9px; margin:18px 0 0; }
+.update-progress-details > div { display:grid; grid-template-columns:72px minmax(0,1fr); gap:12px; align-items:start; }
+.update-progress-details dt { color:#858d9d; font-size:12px; }
+.update-progress-details dd { min-width:0; margin:0; color:#d7dce6; font-size:12px; overflow-wrap:anywhere; }
+.update-progress-details .hidden { display:none; }
+.update-progress-hint { min-height:0 !important; margin:18px 0 0; color:#858d9d !important; font-size:12px; white-space:pre-line; }
 @media (max-width:650px) {
   .topbar { align-items:stretch; }
   .topbar-actions { width:100%; }

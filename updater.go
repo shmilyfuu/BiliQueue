@@ -55,11 +55,24 @@ type UpdateStatus struct {
 	Checking        bool        `json:"checking"`
 	Downloading     bool        `json:"downloading"`
 	Installing      bool        `json:"installing"`
+	Phase           string      `json:"phase,omitempty"`
+	Message         string      `json:"message,omitempty"`
+	TargetVersion   string      `json:"targetVersion,omitempty"`
+	DownloadPath    string      `json:"downloadPath,omitempty"`
+	DownloadedBytes int64       `json:"downloadedBytes,omitempty"`
+	TotalBytes      int64       `json:"totalBytes,omitempty"`
+	BytesPerSecond  int64       `json:"bytesPerSecond,omitempty"`
 	LastCheckedAt   int64       `json:"lastCheckedAt,omitempty"`
 	Error           string      `json:"error,omitempty"`
 	Latest          *UpdateInfo `json:"latest,omitempty"`
 	PreparedVersion string      `json:"preparedVersion,omitempty"`
 	Deferred        bool        `json:"deferred,omitempty"`
+}
+
+type updateDownloadProgress struct {
+	DownloadedBytes int64
+	TotalBytes      int64
+	BytesPerSecond  int64
 }
 
 type embeddedReleaseNote struct {
@@ -266,6 +279,8 @@ func (a *App) checkForUpdates(ctx context.Context) (UpdateInfo, error) {
 	defer a.updateCheckMu.Unlock()
 	a.mu.Lock()
 	a.updateStatus.Checking = true
+	a.updateStatus.Phase = "checking"
+	a.updateStatus.Message = "正在检查更新"
 	a.updateStatus.Error = ""
 	a.mu.Unlock()
 	a.broadcast()
@@ -274,9 +289,13 @@ func (a *App) checkForUpdates(ctx context.Context) (UpdateInfo, error) {
 	a.updateStatus.Checking = false
 	a.updateStatus.LastCheckedAt = time.Now().UnixMilli()
 	if err != nil {
+		a.updateStatus.Phase = "error"
+		a.updateStatus.Message = "检查更新失败"
 		a.updateStatus.Error = err.Error()
 	} else {
 		a.updateStatus.Latest = &info
+		a.updateStatus.Phase = "idle"
+		a.updateStatus.Message = ""
 		a.updateStatus.Error = ""
 	}
 	a.mu.Unlock()
@@ -362,6 +381,9 @@ func (a *App) downloadLatestUpdate(ctx context.Context) (UpdateInfo, error) {
 		if _, err := os.Stat(a.preparedUpdate.HelperEXE); err == nil {
 			a.mu.Lock()
 			a.updateStatus.PreparedVersion = latest.Version
+			a.updateStatus.TargetVersion = latest.Version
+			a.updateStatus.Phase = "ready"
+			a.updateStatus.Message = "更新包已准备完成"
 			a.updateStatus.Error = ""
 			a.mu.Unlock()
 			a.broadcast()
@@ -371,6 +393,12 @@ func (a *App) downloadLatestUpdate(ctx context.Context) (UpdateInfo, error) {
 	}
 	a.mu.Lock()
 	a.updateStatus.Downloading = true
+	a.updateStatus.TargetVersion = latest.Version
+	a.updateStatus.Phase = "preparing"
+	a.updateStatus.Message = "正在准备下载"
+	a.updateStatus.DownloadedBytes = 0
+	a.updateStatus.TotalBytes = 0
+	a.updateStatus.BytesPerSecond = 0
 	a.updateStatus.Error = ""
 	a.mu.Unlock()
 	a.broadcast()
@@ -378,6 +406,8 @@ func (a *App) downloadLatestUpdate(ctx context.Context) (UpdateInfo, error) {
 	a.mu.Lock()
 	a.updateStatus.Downloading = false
 	if err != nil {
+		a.updateStatus.Phase = "error"
+		a.updateStatus.Message = "更新包准备失败"
 		a.updateStatus.Error = err.Error()
 		a.mu.Unlock()
 		a.broadcast()
@@ -386,6 +416,9 @@ func (a *App) downloadLatestUpdate(ctx context.Context) (UpdateInfo, error) {
 	a.preparedUpdate = &prepared
 	a.updateStatus.PreparedVersion = latest.Version
 	a.updateStatus.Deferred = false
+	a.updateStatus.Phase = "ready"
+	a.updateStatus.Message = "更新包已下载并解压完成"
+	a.updateStatus.BytesPerSecond = 0
 	a.updateStatus.Error = ""
 	a.mu.Unlock()
 	a.broadcast()
@@ -401,12 +434,17 @@ func (a *App) applyPreparedUpdate() error {
 	prepared := *a.preparedUpdate
 	a.mu.Lock()
 	a.updateStatus.Installing = true
+	a.updateStatus.Phase = "installing"
+	a.updateStatus.Message = "正在启动更新助手"
+	a.updateStatus.TargetVersion = prepared.Version
 	a.updateStatus.Error = ""
 	a.mu.Unlock()
 	a.broadcast()
 	if err := launchUpdateHelper(a, prepared); err != nil {
 		a.mu.Lock()
 		a.updateStatus.Installing = false
+		a.updateStatus.Phase = "error"
+		a.updateStatus.Message = "启动更新助手失败"
 		a.updateStatus.Error = err.Error()
 		a.mu.Unlock()
 		a.broadcast()
@@ -429,6 +467,9 @@ func (a *App) deferPreparedUpdate() (string, error) {
 	a.mu.Lock()
 	a.updateStatus.Deferred = true
 	a.updateStatus.PreparedVersion = prepared.Version
+	a.updateStatus.TargetVersion = prepared.Version
+	a.updateStatus.Phase = "deferred"
+	a.updateStatus.Message = "已安排在下次启动时更新"
 	a.updateStatus.Error = ""
 	a.mu.Unlock()
 	a.broadcast()
@@ -440,6 +481,20 @@ func (a *App) installLatestUpdate(ctx context.Context) error {
 		return err
 	}
 	return a.applyPreparedUpdate()
+}
+
+func (a *App) setUpdateTransferProgress(phase, message, path string, progress updateDownloadProgress) {
+	a.mu.Lock()
+	a.updateStatus.Phase = phase
+	a.updateStatus.Message = message
+	if path != "" {
+		a.updateStatus.DownloadPath = path
+	}
+	a.updateStatus.DownloadedBytes = progress.DownloadedBytes
+	a.updateStatus.TotalBytes = progress.TotalBytes
+	a.updateStatus.BytesPerSecond = progress.BytesPerSecond
+	a.mu.Unlock()
+	a.broadcast()
 }
 
 func updateWorkspaceRoot() (string, error) {
@@ -524,19 +579,30 @@ func (a *App) downloadAndPrepareUpdate(ctx context.Context, info UpdateInfo) (pr
 		return preparedUpdate{}, err
 	}
 	zipPath := filepath.Join(root, "package.zip")
+	a.setUpdateTransferProgress("preparing", "正在准备更新包", zipPath, updateDownloadProgress{})
 	expectedSHA := info.SHA256
 	if expectedSHA == "" && info.ChecksumURL != "" {
+		a.setUpdateTransferProgress("checksum", "正在读取更新包校验文件", zipPath, updateDownloadProgress{})
 		expectedSHA, err = fetchUpdateChecksum(ctx, info.ChecksumURL)
 		if err != nil {
 			_ = os.RemoveAll(root)
 			return preparedUpdate{}, fmt.Errorf("读取更新包校验文件：%w", err)
 		}
 	}
-	if err := downloadUpdateFile(ctx, info.DownloadURL, zipPath, expectedSHA); err != nil {
+	var finalProgress updateDownloadProgress
+	if err := downloadUpdateFileWithProgress(ctx, info.DownloadURL, zipPath, expectedSHA, func(progress updateDownloadProgress) {
+		finalProgress = progress
+		a.setUpdateTransferProgress("downloading", "正在下载更新包", zipPath, progress)
+	}, func() {
+		finalProgress.BytesPerSecond = 0
+		a.setUpdateTransferProgress("verifying", "正在校验更新包", zipPath, finalProgress)
+	}); err != nil {
 		_ = os.RemoveAll(root)
 		return preparedUpdate{}, err
 	}
 	extractRoot := filepath.Join(root, "package")
+	finalProgress.BytesPerSecond = 0
+	a.setUpdateTransferProgress("extracting", "正在解压更新包", zipPath, finalProgress)
 	if err := extractUpdateZip(zipPath, extractRoot); err != nil {
 		_ = os.RemoveAll(root)
 		return preparedUpdate{}, err
@@ -579,6 +645,15 @@ func fetchUpdateChecksum(ctx context.Context, rawURL string) (string, error) {
 }
 
 func downloadUpdateFile(ctx context.Context, rawURL, target, expectedSHA string) error {
+	return downloadUpdateFileWithProgress(ctx, rawURL, target, expectedSHA, nil, nil)
+}
+
+func downloadUpdateFileWithProgress(
+	ctx context.Context,
+	rawURL, target, expectedSHA string,
+	onProgress func(updateDownloadProgress),
+	onVerify func(),
+) error {
 	client := &http.Client{Timeout: 2 * time.Minute}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -598,7 +673,41 @@ func downloadUpdateFile(ctx context.Context, rawURL, target, expectedSHA string)
 		return err
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(resp.Body, maxUpdateBytes+1))
+	totalBytes := resp.ContentLength
+	if totalBytes < 0 {
+		totalBytes = 0
+	}
+	startedAt := time.Now()
+	lastReportAt := startedAt
+	var lastReportBytes int64
+	reader := &updateProgressReader{
+		Reader: io.LimitReader(resp.Body, maxUpdateBytes+1),
+		Report: func(written int64, force bool) {
+			if onProgress == nil {
+				return
+			}
+			now := time.Now()
+			if !force && now.Sub(lastReportAt) < 200*time.Millisecond {
+				return
+			}
+			elapsed := now.Sub(lastReportAt).Seconds()
+			var speed int64
+			if elapsed > 0 {
+				speed = int64(float64(written-lastReportBytes) / elapsed)
+			}
+			if speed <= 0 && written > 0 {
+				totalElapsed := now.Sub(startedAt).Seconds()
+				if totalElapsed > 0 {
+					speed = int64(float64(written) / totalElapsed)
+				}
+			}
+			lastReportAt = now
+			lastReportBytes = written
+			onProgress(updateDownloadProgress{DownloadedBytes: written, TotalBytes: totalBytes, BytesPerSecond: speed})
+		},
+	}
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), reader)
+	reader.report(true)
 	closeErr := file.Close()
 	if copyErr != nil {
 		return copyErr
@@ -609,6 +718,9 @@ func downloadUpdateFile(ctx context.Context, rawURL, target, expectedSHA string)
 	if written > maxUpdateBytes {
 		return errors.New("更新包超过允许的大小")
 	}
+	if onVerify != nil {
+		onVerify()
+	}
 	actual := hex.EncodeToString(hash.Sum(nil))
 	if expectedSHA != "" && !strings.EqualFold(actual, expectedSHA) {
 		return fmt.Errorf("更新包 SHA-256 校验失败：期望 %s，实际 %s", expectedSHA, actual)
@@ -617,6 +729,27 @@ func downloadUpdateFile(ctx context.Context, rawURL, target, expectedSHA string)
 		log.Printf("update package from %s has no published SHA-256; downloaded digest=%s", rawURL, actual)
 	}
 	return nil
+}
+
+type updateProgressReader struct {
+	io.Reader
+	Written int64
+	Report  func(written int64, force bool)
+}
+
+func (r *updateProgressReader) Read(buffer []byte) (int, error) {
+	n, err := r.Reader.Read(buffer)
+	if n > 0 {
+		r.Written += int64(n)
+		r.report(false)
+	}
+	return n, err
+}
+
+func (r *updateProgressReader) report(force bool) {
+	if r.Report != nil {
+		r.Report(r.Written, force)
+	}
 }
 
 func extractUpdateZip(zipPath, destination string) error {

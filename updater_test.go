@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -101,6 +102,44 @@ func TestFetchUpdateChecksumRejectsInvalidResponse(t *testing.T) {
 
 	if _, err := fetchUpdateChecksum(context.Background(), server.URL); err == nil {
 		t.Fatal("expected invalid checksum response to be rejected")
+	}
+}
+
+func TestDownloadUpdateFileReportsProgress(t *testing.T) {
+	payload := []byte("progress-payload")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "16")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	target := filepath.Join(t.TempDir(), "package.zip")
+	var reports []updateDownloadProgress
+	verified := false
+	err := downloadUpdateFileWithProgress(context.Background(), server.URL, target, "", func(progress updateDownloadProgress) {
+		reports = append(reports, progress)
+	}, func() {
+		verified = true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) == 0 {
+		t.Fatal("expected at least one progress report")
+	}
+	last := reports[len(reports)-1]
+	if last.DownloadedBytes != int64(len(payload)) || last.TotalBytes != int64(len(payload)) {
+		t.Fatalf("unexpected final progress: %#v", last)
+	}
+	if !verified {
+		t.Fatal("expected verification callback")
+	}
+	written, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(written, payload) {
+		t.Fatalf("downloaded payload=%q want=%q", written, payload)
 	}
 }
 

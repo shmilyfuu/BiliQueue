@@ -432,6 +432,17 @@
         </aside>
         <div class="update-release-content">
           <div id="updateModalBody" class="update-modal-body"></div>
+          <div id="updateProgressPanel" class="update-progress-panel hidden" aria-live="polite">
+            <div class="update-progress-heading"><strong id="updateProgressMessage">正在准备更新</strong><span id="updateProgressPercent"></span></div>
+            <div id="updateProgressTrack" class="update-progress-track indeterminate"><span id="updateProgressBar"></span></div>
+            <dl class="update-progress-details">
+              <div><dt>当前步骤</dt><dd id="updateProgressStage">准备更新</dd></div>
+              <div id="updateProgressTransferRow"><dt>下载进度</dt><dd id="updateProgressTransfer">—</dd></div>
+              <div id="updateProgressSpeedRow"><dt>下载速度</dt><dd id="updateProgressSpeed">—</dd></div>
+              <div id="updateProgressPathRow"><dt>下载位置</dt><dd id="updateProgressPath">—</dd></div>
+            </dl>
+            <p id="updateProgressHint" class="update-progress-hint"></p>
+          </div>
         </div>
       </div>
       <div id="updateModalSettings" class="update-modal-settings hidden">
