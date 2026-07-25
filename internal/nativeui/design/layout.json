@@ -1,0 +1,1011 @@
+{
+  "window": {
+    "width": 420,
+    "height": 540,
+    "padding": 16
+  },
+  "topBar": {
+    "height": 30,
+    "marginBottom": 16,
+    "statusWidth": 70,
+    "actionGap": 6
+  },
+  "card": {
+    "headerHeight": 33,
+    "bodyPadding": 12
+  },
+  "toolbar": {
+    "height": 30,
+    "gap": 6,
+    "marginBottom": 8,
+    "buttonWidth": 70
+  },
+  "manual": {
+    "height": 30,
+    "gap": 6,
+    "marginBottom": 8,
+    "paddingBottom": 8,
+    "buttonWidth": 70
+  },
+  "queue": {
+    "rowHeight": 40,
+    "rowGap": 6,
+    "rowPadding": 7,
+    "dragWidth": 10,
+    "positionWidth": 18,
+    "avatarSize": 20,
+    "removeWidth": 36,
+    "giftMaxWidth": 78,
+    "cellGap": 5,
+    "scrollbarWidth": 6,
+    "scrollbarInset": 3,
+    "scrollbarMinThumb": 28,
+    "scrollbarAutoHide": true,
+    "scrollbarShowDelayMs": 900,
+    "scrollbarFadeDurationMs": 280
+  },
+  "targets": {
+    "clearQueue": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "copyURLFailed": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "duplicateInstance": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "genericConfirm": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "genericError": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "genericInfo": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "portChange": {
+      "width": 400,
+      "height": 244,
+      "padding": 18
+    },
+    "portConflict": {
+      "width": 400,
+      "height": 244,
+      "padding": 18
+    },
+    "startupFailed": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "updateAvailable": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "updateComplete": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "updateFailed": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    },
+    "updateProgress": {
+      "width": 400,
+      "height": 270,
+      "padding": 18
+    },
+    "updateReady": {
+      "width": 400,
+      "height": 194,
+      "padding": 18
+    }
+  },
+  "offsets": {
+    "card.header": {
+      "x": 0,
+      "y": 0
+    },
+    "card.header.count": {
+      "x": -4,
+      "y": 0
+    },
+    "card.header.title": {
+      "x": 5,
+      "y": 0
+    },
+    "manual.add": {
+      "x": 0,
+      "y": -6
+    },
+    "manual.input": {
+      "x": 0,
+      "y": -6
+    },
+    "modal.body": {
+      "x": 0,
+      "y": 0
+    },
+    "modal.cancel": {
+      "x": 6,
+      "y": -9
+    },
+    "modal.confirm": {
+      "x": -4,
+      "y": 0
+    },
+    "modal.footer": {
+      "x": 0,
+      "y": -6
+    },
+    "modal.message": {
+      "x": 4,
+      "y": 14
+    },
+    "modal.title": {
+      "x": 4,
+      "y": 6
+    },
+    "queue.drag.indicator": {
+      "x": 0,
+      "y": -2
+    },
+    "queue.row": {
+      "x": 0,
+      "y": 0
+    },
+    "queue.row.drag": {
+      "x": 1,
+      "y": 0
+    },
+    "queue.row.gifted": {
+      "x": 0,
+      "y": 0
+    },
+    "queue.row.remove": {
+      "x": -3,
+      "y": 0
+    },
+    "queue.scrollbar": {
+      "x": 1,
+      "y": 0
+    },
+    "queue.scrollbar.thumb": {
+      "x": 0,
+      "y": 0
+    },
+    "queue.scrollbar.track": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.clearQueue.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.clearQueue.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.clearQueue.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.clearQueue.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.clearQueue.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.clearQueue.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.clearQueue.window.background": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.copyURLFailed.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.copyURLFailed.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.copyURLFailed.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.copyURLFailed.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.copyURLFailed.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.duplicateInstance.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.duplicateInstance.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.duplicateInstance.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.duplicateInstance.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.duplicateInstance.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.genericConfirm.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.genericConfirm.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.genericConfirm.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.genericConfirm.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.genericConfirm.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.genericConfirm.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.genericError.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.genericError.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.genericError.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.genericError.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.genericError.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.genericInfo.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.genericInfo.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.genericInfo.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.genericInfo.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.genericInfo.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.portChange.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.portChange.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.portChange.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.portChange.field.host": {
+      "x": -18,
+      "y": -52
+    },
+    "targets.portChange.field.port": {
+      "x": -2,
+      "y": -52
+    },
+    "targets.portChange.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.portChange.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.portChange.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.portConflict.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.portConflict.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.portConflict.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.portConflict.field.host": {
+      "x": -18,
+      "y": -52
+    },
+    "targets.portConflict.field.port": {
+      "x": -2,
+      "y": -52
+    },
+    "targets.portConflict.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.portConflict.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.portConflict.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.startupFailed.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.startupFailed.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.startupFailed.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.startupFailed.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.startupFailed.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.updateAvailable.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.updateAvailable.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.updateAvailable.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.updateAvailable.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.updateAvailable.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.updateAvailable.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.updateComplete.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.updateComplete.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.updateComplete.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.updateComplete.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.updateComplete.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.updateFailed.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.updateFailed.button.primary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.updateFailed.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.updateFailed.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.updateFailed.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.updateProgress.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.updateProgress.button.secondary": {
+      "x": 162,
+      "y": 14
+    },
+    "targets.updateProgress.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.updateProgress.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.updateProgress.progress.text": {
+      "x": 0,
+      "y": 26
+    },
+    "targets.updateProgress.progress.track": {
+      "x": -18,
+      "y": -56
+    },
+    "targets.updateProgress.title": {
+      "x": -64,
+      "y": -14
+    },
+    "targets.updateReady.body": {
+      "x": 0,
+      "y": 0
+    },
+    "targets.updateReady.button.primary": {
+      "x": -206,
+      "y": 14
+    },
+    "targets.updateReady.button.secondary": {
+      "x": 112,
+      "y": 14
+    },
+    "targets.updateReady.footer": {
+      "x": 0,
+      "y": -14
+    },
+    "targets.updateReady.message": {
+      "x": -18,
+      "y": -22
+    },
+    "targets.updateReady.title": {
+      "x": -64,
+      "y": -14
+    },
+    "toolbar.clear": {
+      "x": 0,
+      "y": -6
+    },
+    "toolbar.next": {
+      "x": 0,
+      "y": -6
+    },
+    "toolbar.pause": {
+      "x": 0,
+      "y": -6
+    },
+    "topbar.brand.subtitle": {
+      "x": 12,
+      "y": 0
+    },
+    "topbar.brand.title": {
+      "x": 12,
+      "y": 0
+    },
+    "topbar.status": {
+      "x": -12,
+      "y": 0
+    },
+    "topbar.status.text": {
+      "x": 0,
+      "y": 0
+    },
+    "topbar.topmost": {
+      "x": 0,
+      "y": 0
+    },
+    "window.background": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "sizeDeltas": {
+    "card.header": {
+      "w": 0,
+      "h": 15
+    },
+    "card.header.count": {
+      "w": 0,
+      "h": 0
+    },
+    "card.header.title": {
+      "w": 0,
+      "h": 0
+    },
+    "manual.add": {
+      "w": 0,
+      "h": 0
+    },
+    "manual.input": {
+      "w": 0,
+      "h": 0
+    },
+    "modal.body": {
+      "w": 0,
+      "h": -34
+    },
+    "modal.cancel": {
+      "w": -4,
+      "h": 0
+    },
+    "modal.confirm": {
+      "w": 0,
+      "h": 0
+    },
+    "modal.footer": {
+      "w": 0,
+      "h": 6
+    },
+    "modal.message": {
+      "w": 0,
+      "h": -34
+    },
+    "modal.title": {
+      "w": 0,
+      "h": 0
+    },
+    "queue.drag.indicator": {
+      "w": 0,
+      "h": -1
+    },
+    "queue.row": {
+      "w": 0,
+      "h": 0
+    },
+    "queue.row.drag": {
+      "w": 0,
+      "h": 0
+    },
+    "queue.row.gifted": {
+      "w": 0,
+      "h": 0
+    },
+    "queue.row.remove": {
+      "w": 0,
+      "h": 0
+    },
+    "queue.scrollbar": {
+      "w": -2,
+      "h": 0
+    },
+    "queue.scrollbar.thumb": {
+      "w": -2,
+      "h": 0
+    },
+    "queue.scrollbar.track": {
+      "w": -2,
+      "h": 0
+    },
+    "targets.clearQueue.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.clearQueue.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.clearQueue.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.clearQueue.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.clearQueue.message": {
+      "w": 36,
+      "h": -34
+    },
+    "targets.clearQueue.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.clearQueue.window.background": {
+      "w": 0,
+      "h": -50
+    },
+    "targets.copyURLFailed.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.copyURLFailed.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.copyURLFailed.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.copyURLFailed.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.copyURLFailed.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.duplicateInstance.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.duplicateInstance.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.duplicateInstance.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.duplicateInstance.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.duplicateInstance.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.genericConfirm.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.genericConfirm.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.genericConfirm.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.genericConfirm.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.genericConfirm.message": {
+      "w": 36,
+      "h": 0
+    },
+    "targets.genericConfirm.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.genericError.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.genericError.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.genericError.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.genericError.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.genericError.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.genericInfo.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.genericInfo.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.genericInfo.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.genericInfo.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.genericInfo.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.portChange.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.portChange.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.portChange.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.portChange.field.host": {
+      "w": -2,
+      "h": 0
+    },
+    "targets.portChange.field.port": {
+      "w": 40,
+      "h": 0
+    },
+    "targets.portChange.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.portChange.message": {
+      "w": 36,
+      "h": -34
+    },
+    "targets.portChange.title": {
+      "w": 80,
+      "h": -4
+    },
+    "targets.portConflict.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.portConflict.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.portConflict.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.portConflict.field.host": {
+      "w": -2,
+      "h": 0
+    },
+    "targets.portConflict.field.port": {
+      "w": 40,
+      "h": 0
+    },
+    "targets.portConflict.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.portConflict.message": {
+      "w": 36,
+      "h": -34
+    },
+    "targets.portConflict.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.startupFailed.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.startupFailed.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.startupFailed.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.startupFailed.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.startupFailed.title": {
+      "w": 60,
+      "h": 0
+    },
+    "targets.updateAvailable.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.updateAvailable.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.updateAvailable.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.updateAvailable.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.updateAvailable.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.updateAvailable.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.updateComplete.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.updateComplete.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.updateComplete.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.updateComplete.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.updateComplete.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.updateFailed.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.updateFailed.button.primary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.updateFailed.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.updateFailed.message": {
+      "w": 16,
+      "h": -34
+    },
+    "targets.updateFailed.title": {
+      "w": 60,
+      "h": 0
+    },
+    "targets.updateProgress.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.updateProgress.button.secondary": {
+      "w": -144,
+      "h": 0
+    },
+    "targets.updateProgress.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.updateProgress.message": {
+      "w": 36,
+      "h": -34
+    },
+    "targets.updateProgress.progress.text": {
+      "w": 0,
+      "h": -4
+    },
+    "targets.updateProgress.progress.track": {
+      "w": 36,
+      "h": 20
+    },
+    "targets.updateProgress.title": {
+      "w": 80,
+      "h": 0
+    },
+    "targets.updateReady.body": {
+      "w": 0,
+      "h": -14
+    },
+    "targets.updateReady.button.primary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.updateReady.button.secondary": {
+      "w": 44,
+      "h": 0
+    },
+    "targets.updateReady.footer": {
+      "w": 0,
+      "h": 14
+    },
+    "targets.updateReady.message": {
+      "w": 36,
+      "h": -12
+    },
+    "targets.updateReady.title": {
+      "w": 80,
+      "h": 0
+    },
+    "toolbar.clear": {
+      "w": 0,
+      "h": 0
+    },
+    "toolbar.next": {
+      "w": 0,
+      "h": 0
+    },
+    "toolbar.pause": {
+      "w": 0,
+      "h": 0
+    },
+    "topbar.brand.subtitle": {
+      "w": 0,
+      "h": 0
+    },
+    "topbar.brand.title": {
+      "w": 0,
+      "h": 0
+    },
+    "topbar.status": {
+      "w": 0,
+      "h": 0
+    },
+    "topbar.status.text": {
+      "w": 0,
+      "h": 0
+    },
+    "topbar.topmost": {
+      "w": 0,
+      "h": 0
+    },
+    "window.background": {
+      "w": 0,
+      "h": 0
+    }
+  }
+}

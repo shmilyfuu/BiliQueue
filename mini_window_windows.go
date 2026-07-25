@@ -3,497 +3,225 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
-	"unsafe"
+	"time"
 
-	webview2 "github.com/jchv/go-webview2"
-	"github.com/jchv/go-webview2/webviewloader"
-)
-
-const (
-	miniWindowWidth  = 420
-	miniWindowHeight = 560
-
-	miniSWHide      = 0
-	miniSWRestore   = 9
-	miniWMClose     = 0x0010
-	miniWMColorText = 0x0138
-	miniGWLWndProc  = ^uintptr(3) // GWLP_WNDPROC (-4)
-	miniSWPNoSize   = 0x0001
-	miniSWPNoMove   = 0x0002
-	miniSWPNoZOrder = 0x0004
-	miniSWPNoActive = 0x0010
-
-	miniLoadingWindowClass = "BiliQueueMiniLoadingWindow"
-	miniWSExTopmost        = 0x00000008
-	miniWSOverlappedWindow = 0x00CF0000
-	miniWSThickFrame       = 0x00040000
-	miniWSMaximizeBox      = 0x00010000
-	miniWSFixedWindow      = miniWSOverlappedWindow &^ (miniWSThickFrame | miniWSMaximizeBox)
-	miniSSCenter           = 0x00000001
-	miniBkTransparent      = 1
-)
-
-var (
-	miniWindowUser32          = syscall.NewLazyDLL("user32.dll")
-	miniProcShowWindow        = miniWindowUser32.NewProc("ShowWindow")
-	miniProcSetForeground     = miniWindowUser32.NewProc("SetForegroundWindow")
-	miniProcSetWindowPosition = miniWindowUser32.NewProc("SetWindowPos")
-	miniProcSetWindowLong     = miniWindowUser32.NewProc("SetWindowLongPtrW")
-	miniProcCallWindow        = miniWindowUser32.NewProc("CallWindowProcW")
-	miniProcDefWindow         = miniWindowUser32.NewProc("DefWindowProcW")
-	miniProcGetClientRect     = miniWindowUser32.NewProc("GetClientRect")
-	miniProcGetWindowRect     = miniWindowUser32.NewProc("GetWindowRect")
-	miniProcAdjustWindowRect  = miniWindowUser32.NewProc("AdjustWindowRect")
-	miniWindowCallback        = syscall.NewCallback(miniControlWindowProc)
-	miniLoadingWindowCallback = syscall.NewCallback(miniLoadingWindowProc)
-	miniLoadingGDI32          = syscall.NewLazyDLL("gdi32.dll")
-	miniProcCreateSolidBrush  = miniLoadingGDI32.NewProc("CreateSolidBrush")
-	miniProcSetTextColor      = miniLoadingGDI32.NewProc("SetTextColor")
-	miniProcSetBkMode         = miniLoadingGDI32.NewProc("SetBkMode")
-	miniLoadingClassOnce      sync.Once
-	miniLoadingClassReady     bool
-	miniLoadingBackground     uintptr
+	"biliqueue/internal/nativeui"
 )
 
 type miniWindowPreferences struct {
 	Topmost bool `json:"topmost"`
 }
 
-type miniWindowRect struct {
-	left   int32
-	top    int32
-	right  int32
-	bottom int32
-}
-
-type miniWindowManager struct {
-	mu          sync.Mutex
-	view        webview2.WebView
-	hwnd        uintptr
-	opening     bool
-	ready       bool
-	visible     bool
-	topmost     bool
-	destroying  bool
-	oldWndProc  uintptr
-	loadingHwnd uintptr
-}
-
-var nativeMiniWindow miniWindowManager
-
 func openMiniControlWindow(app *App) error {
 	if app == nil {
 		return errMiniControlWindowUnavailable
 	}
-	nativeMiniWindow.mu.Lock()
-	if nativeMiniWindow.view != nil && nativeMiniWindow.hwnd != 0 {
-		view := nativeMiniWindow.view
-		ready := nativeMiniWindow.ready
-		nativeMiniWindow.visible = true
-		loadingHwnd := nativeMiniWindow.loadingHwnd
-		nativeMiniWindow.mu.Unlock()
-		if ready {
-			showMiniControlView(view, true)
-		} else if loadingHwnd != 0 {
-			miniProcShowWindow.Call(loadingHwnd, miniSWRestore)
-			miniProcSetForeground.Call(loadingHwnd)
-		}
-		return nil
+	host, err := nativeui.DefaultHost()
+	if err != nil {
+		return err
 	}
-	if nativeMiniWindow.opening {
-		nativeMiniWindow.visible = true
-		nativeMiniWindow.mu.Unlock()
-		return nil
-	}
-	nativeMiniWindow.opening = true
-	nativeMiniWindow.visible = true
-	nativeMiniWindow.mu.Unlock()
-	go runMiniControlWindow(app, true)
-	return nil
+	prefs := loadMiniWindowPreferences(app)
+	return host.OpenMini(nativeMiniController(app), prefs.Topmost)
 }
 
 func preloadMiniControlWindow(app *App) {
 	if app == nil {
 		return
 	}
-	nativeMiniWindow.mu.Lock()
-	if nativeMiniWindow.view != nil || nativeMiniWindow.opening {
-		nativeMiniWindow.mu.Unlock()
-		return
-	}
-	nativeMiniWindow.opening = true
-	nativeMiniWindow.visible = false
-	nativeMiniWindow.mu.Unlock()
-	go runMiniControlWindow(app, false)
+	go func() {
+		host, err := nativeui.DefaultHost()
+		if err != nil {
+			return
+		}
+		prefs := loadMiniWindowPreferences(app)
+		_ = host.PreloadMini(nativeMiniController(app), prefs.Topmost)
+	}()
 }
 
 func toggleMiniControlWindow(app *App) error {
 	if app == nil {
 		return errMiniControlWindowUnavailable
 	}
-	nativeMiniWindow.mu.Lock()
-	if nativeMiniWindow.view == nil || nativeMiniWindow.hwnd == 0 {
-		if nativeMiniWindow.opening {
-			nativeMiniWindow.visible = !nativeMiniWindow.visible
-			nativeMiniWindow.mu.Unlock()
-			return nil
-		}
-		nativeMiniWindow.mu.Unlock()
-		return openMiniControlWindow(app)
+	host, err := nativeui.DefaultHost()
+	if err != nil {
+		return err
 	}
-	view := nativeMiniWindow.view
-	visible := !nativeMiniWindow.visible
-	nativeMiniWindow.visible = visible
-	ready := nativeMiniWindow.ready
-	loadingHwnd := nativeMiniWindow.loadingHwnd
-	nativeMiniWindow.mu.Unlock()
-	if ready {
-		showMiniControlView(view, visible)
-	} else if loadingHwnd != 0 {
-		show := uintptr(miniSWHide)
-		if visible {
-			show = miniSWRestore
-		}
-		miniProcShowWindow.Call(loadingHwnd, show)
-	}
-	return nil
-}
-
-func showMiniControlView(view webview2.WebView, visible bool) {
-	view.Dispatch(func() {
-		hwnd := uintptr(view.Window())
-		if !visible {
-			miniProcShowWindow.Call(hwnd, miniSWHide)
-			return
-		}
-		miniProcShowWindow.Call(hwnd, miniSWRestore)
-		miniProcSetForeground.Call(hwnd)
-	})
-}
-
-func runMiniControlWindow(app *App, promptWhenUnavailable bool) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	version, err := webviewloader.GetInstalledVersion()
-	if err != nil || strings.TrimSpace(version) == "" {
-		if err != nil {
-			log.Printf("detect WebView2 runtime: %v", err)
-		}
-		markMiniWindowClosed()
-		if promptWhenUnavailable {
-			handleMissingWebView2(app)
-		}
-		return
-	}
-
-	dataPath := filepath.Join(app.dataDir, "webview2")
-	if err := os.MkdirAll(dataPath, 0o755); err != nil {
-		log.Printf("create WebView2 data directory: %v", err)
-	}
-	windowTitle := "BiliQueue 简易控制"
-	var loadingHwnd uintptr
-	if promptWhenUnavailable {
-		loadingHwnd = createMiniLoadingWindow(windowTitle)
-	}
-	view := webview2.NewWithOptions(webview2.WebViewOptions{
-		AutoFocus: true,
-		DataPath:  dataPath,
-		WindowOptions: webview2.WindowOptions{
-			Title:  windowTitle,
-			Width:  miniWindowWidth,
-			Height: miniWindowHeight,
-			Center: true,
-		},
-	})
-	if view == nil {
-		destroyMiniLoadingWindow(loadingHwnd)
-		markMiniWindowClosed()
-		if promptWhenUnavailable {
-			handleMissingWebView2(app)
-		}
-		return
-	}
-
-	hwnd := uintptr(view.Window())
-	miniProcShowWindow.Call(hwnd, miniSWHide)
-	view.SetSize(miniWindowWidth, miniWindowHeight, webview2.HintFixed)
-	applyMiniWindowClientSize(hwnd)
 	prefs := loadMiniWindowPreferences(app)
-	oldWndProc, _, _ := miniProcSetWindowLong.Call(hwnd, miniGWLWndProc, miniWindowCallback)
-	nativeMiniWindow.mu.Lock()
-	nativeMiniWindow.view = view
-	nativeMiniWindow.hwnd = hwnd
-	nativeMiniWindow.opening = false
-	nativeMiniWindow.ready = false
-	visible := nativeMiniWindow.visible
-	nativeMiniWindow.topmost = prefs.Topmost
-	nativeMiniWindow.destroying = false
-	nativeMiniWindow.oldWndProc = oldWndProc
-	nativeMiniWindow.loadingHwnd = loadingHwnd
-	nativeMiniWindow.mu.Unlock()
-	if !visible {
-		miniProcShowWindow.Call(loadingHwnd, miniSWHide)
-	}
-	applyMiniWindowTopmost(hwnd, prefs.Topmost)
-	if err := view.Bind("__biliqueueMiniReady", func() {
-		showReadyMiniControlWindow(hwnd)
-	}); err != nil {
-		log.Printf("bind mini control ready callback: %v", err)
-		showReadyMiniControlWindow(hwnd)
-	}
-	view.Navigate(freshOpenURL(urlForListen(app.currentListenAddress(), "/mini-control")))
-	view.Run()
-	markMiniWindowClosed()
-}
-
-func createMiniLoadingWindow(title string) uintptr {
-	miniLoadingClassOnce.Do(func() {
-		className, _ := syscall.UTF16PtrFromString(miniLoadingWindowClass)
-		hInstance, _, _ := procPromptGetModuleHandle.Call(0)
-		miniLoadingBackground, _, _ = miniProcCreateSolidBrush.Call(0x001B1411) // #11141b
-		wc := wndClassEx{
-			cbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
-			lpfnWndProc:   miniLoadingWindowCallback,
-			hInstance:     hInstance,
-			hbrBackground: miniLoadingBackground,
-			lpszClassName: className,
-		}
-		registered, _, registerErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-		miniLoadingClassReady = registered != 0 || registerErr == syscall.Errno(1410)
-	})
-	if !miniLoadingClassReady {
-		return 0
-	}
-
-	className, _ := syscall.UTF16PtrFromString(miniLoadingWindowClass)
-	windowTitle, _ := syscall.UTF16PtrFromString(title)
-	hInstance, _, _ := procPromptGetModuleHandle.Call(0)
-	outerWidth, outerHeight := miniLoadingOuterSize()
-	screenWidth, _, _ := procGetSystemMetrics.Call(0)
-	screenHeight, _, _ := procGetSystemMetrics.Call(1)
-	x := (int32(screenWidth) - outerWidth) / 2
-	y := (int32(screenHeight) - outerHeight) / 2
-	if x < 0 {
-		x = 0
-	}
-	if y < 0 {
-		y = 0
-	}
-	hwnd, _, _ := procCreateWindowExW.Call(
-		miniWSExTopmost,
-		uintptr(unsafe.Pointer(className)),
-		uintptr(unsafe.Pointer(windowTitle)),
-		miniWSFixedWindow|wsVisible,
-		uintptr(x), uintptr(y), uintptr(outerWidth), uintptr(outerHeight),
-		0, 0, hInstance, 0,
-	)
-	if hwnd != 0 {
-		staticClass, _ := syscall.UTF16PtrFromString("STATIC")
-		loadingText, _ := syscall.UTF16PtrFromString("正在打开简易控制...")
-		label, _, _ := procCreateWindowExW.Call(
-			0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(loadingText)),
-			wsChild|wsVisible|miniSSCenter,
-			0, miniWindowHeight/2-14, miniWindowWidth, 28,
-			hwnd, 0, hInstance, 0,
-		)
-		if label != 0 {
-			font, _, _ := procGetStockObject.Call(defaultGuiFont)
-			procPromptSendMessageW.Call(label, wmSetFont, font, 1)
-		}
-		procShowWindow.Call(hwnd, swShow)
-		procUpdateWindow.Call(hwnd)
-		procSetForegroundWnd.Call(hwnd)
-	}
-	return hwnd
-}
-
-func miniLoadingOuterSize() (int32, int32) {
-	rect := miniWindowRect{right: miniWindowWidth, bottom: miniWindowHeight}
-	miniProcAdjustWindowRect.Call(uintptr(unsafe.Pointer(&rect)), miniWSFixedWindow, 0)
-	return rect.right - rect.left, rect.bottom - rect.top
-}
-
-func applyMiniWindowClientSize(hwnd uintptr) {
-	var clientRect, windowRect miniWindowRect
-	if result, _, _ := miniProcGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&clientRect))); result == 0 {
-		return
-	}
-	if result, _, _ := miniProcGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&windowRect))); result == 0 {
-		return
-	}
-	clientWidth := clientRect.right - clientRect.left
-	clientHeight := clientRect.bottom - clientRect.top
-	outerWidth := windowRect.right - windowRect.left
-	outerHeight := windowRect.bottom - windowRect.top
-	targetOuterWidth := outerWidth + miniWindowWidth - clientWidth
-	targetOuterHeight := outerHeight + miniWindowHeight - clientHeight
-	miniProcSetWindowPosition.Call(
-		hwnd, 0, 0, 0, uintptr(targetOuterWidth), uintptr(targetOuterHeight),
-		miniSWPNoMove|miniSWPNoZOrder|miniSWPNoActive,
-	)
-}
-
-func miniLoadingWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-	if message == miniWMClose {
-		return 0
-	}
-	if message == miniWMColorText {
-		miniProcSetTextColor.Call(wParam, 0x009F9993) // #93999f
-		miniProcSetBkMode.Call(wParam, miniBkTransparent)
-		return miniLoadingBackground
-	}
-	result, _, _ := miniProcDefWindow.Call(hwnd, uintptr(message), wParam, lParam)
-	return result
-}
-
-func destroyMiniLoadingWindow(hwnd uintptr) {
-	if hwnd != 0 {
-		procDestroyWindow.Call(hwnd)
-	}
-}
-
-func miniControlWindowProc(hwnd, message, wParam, lParam uintptr) uintptr {
-	nativeMiniWindow.mu.Lock()
-	owned := nativeMiniWindow.hwnd == hwnd
-	destroying := nativeMiniWindow.destroying
-	oldWndProc := nativeMiniWindow.oldWndProc
-	nativeMiniWindow.mu.Unlock()
-
-	if owned && message == miniWMClose && !destroying {
-		nativeMiniWindow.mu.Lock()
-		if nativeMiniWindow.hwnd == hwnd {
-			nativeMiniWindow.visible = false
-		}
-		nativeMiniWindow.mu.Unlock()
-		miniProcShowWindow.Call(hwnd, miniSWHide)
-		return 0
-	}
-	if oldWndProc != 0 {
-		result, _, _ := miniProcCallWindow.Call(oldWndProc, hwnd, message, wParam, lParam)
-		return result
-	}
-	result, _, _ := miniProcDefWindow.Call(hwnd, message, wParam, lParam)
-	return result
-}
-
-func showReadyMiniControlWindow(hwnd uintptr) {
-	nativeMiniWindow.mu.Lock()
-	if nativeMiniWindow.hwnd != hwnd || nativeMiniWindow.destroying || nativeMiniWindow.ready {
-		nativeMiniWindow.mu.Unlock()
-		return
-	}
-	nativeMiniWindow.ready = true
-	visible := nativeMiniWindow.visible
-	loadingHwnd := nativeMiniWindow.loadingHwnd
-	nativeMiniWindow.loadingHwnd = 0
-	nativeMiniWindow.mu.Unlock()
-	destroyMiniLoadingWindow(loadingHwnd)
-	if visible {
-		miniProcShowWindow.Call(hwnd, miniSWRestore)
-		miniProcSetForeground.Call(hwnd)
-	}
-}
-
-func handleMissingWebView2(app *App) {
-	choice := showWebView2MissingDialog()
-	switch choice {
-	case webView2MissingDownload:
-		if err := openBrowser("https://go.microsoft.com/fwlink/p/?LinkId=2124703"); err != nil {
-			log.Printf("open WebView2 download: %v", err)
-		}
-	case webView2MissingBrowser:
-		if err := openBrowser(freshOpenURL(urlForListen(app.currentListenAddress(), "/mini-control"))); err != nil {
-			log.Printf("open mini control in browser: %v", err)
-		}
-	}
-}
-
-func markMiniWindowClosed() {
-	nativeMiniWindow.mu.Lock()
-	loadingHwnd := nativeMiniWindow.loadingHwnd
-	nativeMiniWindow.view = nil
-	nativeMiniWindow.hwnd = 0
-	nativeMiniWindow.opening = false
-	nativeMiniWindow.ready = false
-	nativeMiniWindow.visible = false
-	nativeMiniWindow.destroying = false
-	nativeMiniWindow.oldWndProc = 0
-	nativeMiniWindow.loadingHwnd = 0
-	nativeMiniWindow.mu.Unlock()
-	destroyMiniLoadingWindow(loadingHwnd)
+	return host.ToggleMini(nativeMiniController(app), prefs.Topmost)
 }
 
 func miniControlWindowState() MiniControlWindowState {
-	nativeMiniWindow.mu.Lock()
-	defer nativeMiniWindow.mu.Unlock()
+	host, err := nativeui.DefaultHost()
+	if err != nil {
+		return MiniControlWindowState{Supported: true}
+	}
+	state := host.MiniState()
 	return MiniControlWindowState{
 		Supported: true,
-		Active:    nativeMiniWindow.view != nil && nativeMiniWindow.hwnd != 0,
-		Opening:   nativeMiniWindow.opening,
-		Visible:   nativeMiniWindow.visible,
-		Topmost:   nativeMiniWindow.topmost,
+		Active:    state.Active,
+		Opening:   false,
+		Visible:   state.Visible,
+		Topmost:   state.Topmost,
 	}
 }
 
 func setMiniControlWindowTopmost(app *App, topmost bool) (MiniControlWindowState, error) {
-	nativeMiniWindow.mu.Lock()
-	view := nativeMiniWindow.view
-	hwnd := nativeMiniWindow.hwnd
-	if view == nil || hwnd == 0 {
-		nativeMiniWindow.mu.Unlock()
+	host, err := nativeui.DefaultHost()
+	if err != nil {
+		return miniControlWindowState(), err
+	}
+	state, err := host.SetMiniTopmost(topmost)
+	if err != nil {
 		return miniControlWindowState(), errMiniControlWindowUnavailable
 	}
-	nativeMiniWindow.topmost = topmost
-	nativeMiniWindow.mu.Unlock()
-
-	view.Dispatch(func() { applyMiniWindowTopmost(hwnd, topmost) })
 	if err := saveMiniWindowPreferences(app, miniWindowPreferences{Topmost: topmost}); err != nil {
-		log.Printf("save mini window preferences: %v", err)
+		return miniControlWindowState(), err
 	}
-	return miniControlWindowState(), nil
-}
-
-func applyMiniWindowTopmost(hwnd uintptr, topmost bool) {
-	insertAfter := ^uintptr(1) // HWND_NOTOPMOST (-2)
-	if topmost {
-		insertAfter = ^uintptr(0) // HWND_TOPMOST (-1)
-	}
-	miniProcSetWindowPosition.Call(hwnd, insertAfter, 0, 0, 0, 0, miniSWPNoMove|miniSWPNoSize|miniSWPNoActive)
+	return MiniControlWindowState{
+		Supported: true,
+		Active:    state.Active,
+		Visible:   state.Visible,
+		Topmost:   state.Topmost,
+	}, nil
 }
 
 func refreshMiniControlWindow(app *App) {
-	nativeMiniWindow.mu.Lock()
-	view := nativeMiniWindow.view
-	nativeMiniWindow.mu.Unlock()
-	if view == nil || app == nil {
-		return
-	}
-	url := freshOpenURL(urlForListen(app.currentListenAddress(), "/mini-control"))
-	view.Dispatch(func() { view.Navigate(url) })
+	// The native window subscribes directly to App state, so no navigation or
+	// explicit refresh is necessary after a port change.
 }
 
 func closeMiniControlWindow() {
-	nativeMiniWindow.mu.Lock()
-	view := nativeMiniWindow.view
-	nativeMiniWindow.destroying = true
-	nativeMiniWindow.visible = false
-	loadingHwnd := nativeMiniWindow.loadingHwnd
-	nativeMiniWindow.loadingHwnd = 0
-	nativeMiniWindow.mu.Unlock()
-	destroyMiniLoadingWindow(loadingHwnd)
-	if view != nil {
-		view.Dispatch(func() { view.Destroy() })
+	host, err := nativeui.DefaultHost()
+	if err == nil {
+		host.CloseMini()
 	}
+}
+
+func nativeMiniController(app *App) nativeui.MiniController {
+	return nativeui.MiniController{
+		Subscribe: func() (<-chan nativeui.MiniState, func()) {
+			source, unsubscribe := app.subscribeState()
+			output := make(chan nativeui.MiniState, 1)
+			done := make(chan struct{})
+			var once sync.Once
+			cancel := func() {
+				once.Do(func() {
+					close(done)
+					unsubscribe()
+				})
+			}
+			go func() {
+				defer close(output)
+				for {
+					select {
+					case state := <-source:
+						converted := toNativeMiniState(state)
+						select {
+						case output <- converted:
+						default:
+							select {
+							case <-output:
+							default:
+							}
+							select {
+							case output <- converted:
+							default:
+							}
+						}
+					case <-done:
+						return
+					}
+				}
+			}()
+			return output, cancel
+		},
+		Next:      app.advanceQueue,
+		SetPaused: app.setQueuePaused,
+		Clear:     app.clearQueue,
+		Add:       app.addManualUser,
+		Remove: func(id string) {
+			app.removeQueueUser(id)
+		},
+		Reorder: app.reorderQueue,
+		LoadImage: func(raw string) (image.Image, error) {
+			return app.loadNativeImage(raw)
+		},
+		GuardIcon: loadNativeGuardIcon,
+		TopmostChanged: func(topmost bool) {
+			_ = saveMiniWindowPreferences(app, miniWindowPreferences{Topmost: topmost})
+		},
+	}
+}
+
+func toNativeMiniState(state PublicState) nativeui.MiniState {
+	queue := make([]nativeui.MiniUser, len(state.Queue))
+	for index, user := range state.Queue {
+		queue[index] = nativeui.MiniUser{
+			ID:          user.ID,
+			Username:    user.Username,
+			Avatar:      user.Avatar,
+			GuardLevel:  user.GuardLevel,
+			Manual:      user.Manual,
+			GiftBattery: user.GiftBattery,
+		}
+	}
+	return nativeui.MiniState{
+		Connected: state.ConnectionStatus == "connected",
+		Paused:    state.Paused,
+		Queue:     queue,
+	}
+}
+
+func (app *App) loadNativeImage(raw string) (image.Image, error) {
+	url, err := normalizeProxyImageURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalized := url.String()
+	path := filepath.Join(app.imageCacheDir(), imageCacheName(normalized))
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		data, err = app.fetchAndCacheImage(ctx, normalized, path)
+		if err != nil {
+			return nil, err
+		}
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode native avatar: %w", err)
+	}
+	return decoded, nil
+}
+
+func loadNativeGuardIcon(level int) (image.Image, error) {
+	name := map[int]string{
+		1: "assets/icon_governor.png",
+		2: "assets/icon_supervisor.png",
+		3: "assets/icon_captain.png",
+	}[level]
+	if name == "" {
+		return nil, fmt.Errorf("unknown guard level %d", level)
+	}
+	data, err := webFiles.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(data))
+	return decoded, err
 }
 
 func miniWindowPreferencesPath(app *App) string {
@@ -514,4 +242,9 @@ func saveMiniWindowPreferences(app *App, prefs miniWindowPreferences) error {
 		return fmt.Errorf("应用尚未初始化")
 	}
 	return writeJSONAtomic(miniWindowPreferencesPath(app), prefs)
+}
+
+func splitNativeListenAddress(value string) (string, string) {
+	host, port := splitListenAddress(strings.TrimSpace(value))
+	return host, port
 }

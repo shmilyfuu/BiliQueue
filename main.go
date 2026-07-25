@@ -231,9 +231,10 @@ type App struct {
 	preparedUpdate        *preparedUpdate
 	runtimeID             string
 
-	dataDir  string
-	fontsDir string
-	clients  map[chan []byte]struct{}
+	dataDir   string
+	fontsDir  string
+	clients   map[chan []byte]struct{}
+	observers map[chan PublicState]struct{}
 
 	connectionCancel     context.CancelFunc
 	connectionGeneration uint64
@@ -242,7 +243,7 @@ type App struct {
 	updateInstallMu      sync.Mutex
 }
 
-const version = "0.1.18"
+const version = "0.2.0"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
@@ -370,6 +371,7 @@ func newAppWithFonts(dataDir, fontsOverride string) *App {
 		dataDir:          dataDir,
 		fontsDir:         fontsDir,
 		clients:          make(map[chan []byte]struct{}),
+		observers:        make(map[chan PublicState]struct{}),
 		giftEvents:       make(map[string]int64),
 		hotkeyStatus:     defaultHotkeyStatus("快捷键服务尚未启动"),
 		runtimeID:        fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -480,7 +482,8 @@ func (a *App) applyHotkeys(cfg HotkeyConfig) map[string]string {
 
 func (a *App) broadcast() {
 	a.mu.RLock()
-	payload, err := json.Marshal(a.stateLocked())
+	state := a.stateLocked()
+	payload, err := json.Marshal(state)
 	if err != nil {
 		a.mu.RUnlock()
 		return
@@ -489,6 +492,10 @@ func (a *App) broadcast() {
 	for ch := range a.clients {
 		clients = append(clients, ch)
 	}
+	observers := make([]chan PublicState, 0, len(a.observers))
+	for ch := range a.observers {
+		observers = append(observers, ch)
+	}
 	a.mu.RUnlock()
 
 	for _, ch := range clients {
@@ -496,6 +503,36 @@ func (a *App) broadcast() {
 		case ch <- payload:
 		default:
 		}
+	}
+	for _, ch := range observers {
+		select {
+		case ch <- state:
+		default:
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- state:
+			default:
+			}
+		}
+	}
+}
+
+func (a *App) subscribeState() (<-chan PublicState, func()) {
+	ch := make(chan PublicState, 1)
+	a.mu.Lock()
+	a.observers[ch] = struct{}{}
+	ch <- a.stateLocked()
+	a.mu.Unlock()
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			a.mu.Lock()
+			delete(a.observers, ch)
+			a.mu.Unlock()
+		})
 	}
 }
 
@@ -1858,12 +1895,7 @@ func (a *App) routes() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "用户名不能为空"})
 			return
 		}
-		manualSequence := a.messageSeq.Add(1) % 1000
-		uid := -(time.Now().UnixMilli()*1000 + int64(manualSequence))
-		a.mu.RLock()
-		joinCommand := a.config.JoinCommand
-		a.mu.RUnlock()
-		ok, detail := a.addUser(ChatMessage{UID: uid, Username: strings.TrimSpace(req.Username), Text: joinCommand, Manual: true})
+		ok, detail := a.addManualUser(req.Username)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "detail": detail})
 	})
 
@@ -1905,16 +1937,7 @@ func (a *App) routes() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		a.mu.Lock()
-		for i, u := range a.queue {
-			if u.ID == req.ID {
-				a.queue = append(a.queue[:i], a.queue[i+1:]...)
-				break
-			}
-		}
-		a.mu.Unlock()
-		a.saveQueue()
-		a.broadcast()
+		a.removeQueueUser(req.ID)
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -1930,27 +1953,7 @@ func (a *App) routes() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		a.mu.Lock()
-		byID := make(map[string]QueueUser, len(a.queue))
-		for _, u := range a.queue {
-			byID[u.ID] = u
-		}
-		ordered := make([]QueueUser, 0, len(a.queue))
-		for _, id := range req.IDs {
-			if u, ok := byID[id]; ok {
-				ordered = append(ordered, u)
-				delete(byID, id)
-			}
-		}
-		for _, u := range a.queue {
-			if _, ok := byID[u.ID]; ok {
-				ordered = append(ordered, u)
-			}
-		}
-		a.queue = ordered
-		a.mu.Unlock()
-		a.saveQueue()
-		a.broadcast()
+		a.reorderQueue(req.IDs)
 		writeJSON(w, http.StatusOK, a.state())
 	})
 
@@ -1966,10 +1969,7 @@ func (a *App) routes() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		a.mu.Lock()
-		a.paused = req.Paused
-		a.mu.Unlock()
-		a.broadcast()
+		a.setQueuePaused(req.Paused)
 		writeJSON(w, http.StatusOK, a.state())
 	})
 

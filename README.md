@@ -2,7 +2,7 @@
 
 BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供网页控制台和浏览器源横条，可通过弹幕管理排队、取消排队和礼物插队。
 
-> 当前版本：v0.1.18
+> 当前版本：v0.2.0
 
 ## 功能
 
@@ -26,7 +26,7 @@ BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供�
 - 横条文字内容支持手动应用，编辑时不会实时同步到横条
 - Windows 版支持直接双击 exe 静默启动到系统托盘
 - 托盘菜单支持打开控制台、打开简易控制页、复制浏览器源地址、修改端口、下一位、清空队列、自动检查更新、打开数据文件夹、打开日志和退出
-- 简易控制页使用 `420 × 560` 内容区域的原生 WebView2 窗口，可选择置顶并保留置顶状态
+- 简易控制页使用 `420 × 560` 内容区域的原生 Direct2D 窗口，可选择置顶并保留置顶状态
 - 支持为打开控制台、打开或关闭简易控制页、下一位和清空队列录制 Windows 全局快捷键
 - 支持 Gitee 优先、GitHub 备用的应用内更新检查和 Windows 正式版自动更新
 - 当天队列异常退出恢复
@@ -37,7 +37,7 @@ BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供�
 请从 [GitHub Releases](https://github.com/shmilyfuu/BiliQueue/releases) 或 [Gitee Releases](https://gitee.com/shmilyfuu/BiliQueue/releases) 下载：
 
 ```text
-BiliQueue-v0.1.18-windows.zip
+BiliQueue-v0.2.0-windows.zip
 ```
 
 解压后推荐直接双击：
@@ -48,7 +48,7 @@ BiliQueue-windows-amd64.exe
 
 启动后请在 Windows 右下角系统托盘区域找到 BiliQueue 图标，右键打开菜单。
 
-简易控制窗口需要 Microsoft Edge WebView2 Runtime。若系统未安装，BiliQueue 会提供“下载 WebView2”“默认浏览器打开”和“取消”三种选择；下载按钮会打开微软的 WebView2 引导程序下载地址。
+Windows 原生窗口使用系统自带的 Win32、Direct2D、DirectWrite 和 DWM，不需要安装 WebView2、.NET、Windows App SDK 或其他运行环境。Windows 11 优先使用 Mica；系统材质不可用时自动使用 Direct2D Acrylic 或纯色回退。
 
 备用启动脚本：
 
@@ -82,6 +82,15 @@ http://127.0.0.1:18303/overlay
 6. 根据直播需求调整区域尺寸、文字样式、滚动方式、背景渐变和礼物规则。
 
 弹幕指令、空态文字、右侧说明内容和文字样式均可在控制台修改。
+
+## v0.2.0 重点变化
+
+- 简易控制窗口、修改端口、重复运行、清空队列、更新进度及通用信息窗口迁移为 Win32 + Direct2D + DirectWrite 原生实现。
+- 原生窗口统一使用设计稿 v16 的内嵌主题与布局；正式版不创建或读取外部主题编辑文件。
+- Windows 11 优先使用 Mica，DWM 材质不可用时自动使用 Direct2D Acrylic 或纯色背景。
+- 简易控制窗口直接订阅程序内队列状态，并与网页控制台共用下一位、暂停、清空、手动添加、移除和拖拽排序逻辑。
+- 托盘右键菜单优先使用统一的 Direct2D 菜单，创建失败时自动回退标准 Win32 菜单。
+- 移除 WebView2 依赖、运行时检测、下载引导和用户数据入口；保留 `/mini-control` 作为浏览器与非 Windows 备用页面。
 
 ## v0.1.18 重点变化
 
@@ -276,12 +285,12 @@ mv BiliQueue-windows-amd64-icon.exe BiliQueue-windows-amd64.exe
 仓库只提交已经确认的正式版本。后续测试包按以下方式命名：
 
 ```text
-v0.1.18-test1  本地测试，不创建 Release
-v0.1.18        确认后提交仓库并创建 Release
+v0.2.0-test1  本地测试，不创建 Release
+v0.2.0        确认后提交仓库并创建 Release
 ```
 
 未确认的测试版本不会直接写入仓库。
 
 ## 隐私说明
 
-BiliQueue 为本地程序。账号 Cookie、配置、队列、日志、头像缓存和 WebView2 用户数据保存在本机项目目录。使用源码或发布包时，请自行保护 `data` 文件夹中的敏感内容。
+BiliQueue 为本地程序。账号 Cookie、配置、队列、日志和头像缓存保存在本机项目目录。使用源码或发布包时，请自行保护 `data` 文件夹中的敏感内容。旧版本创建的 `data/webview2` 不再使用，可在确认不需要回退旧版本后手动删除。

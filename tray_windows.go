@@ -3,6 +3,7 @@
 package main
 
 import (
+	"biliqueue/internal/nativeui"
 	"fmt"
 	"log"
 	"os"
@@ -32,6 +33,7 @@ const (
 	wmRButtonDown      = 0x0204
 	wmRButtonUp        = 0x0205
 	wmLButtonDblClk    = 0x0203
+	wmMouseMove        = 0x0200
 
 	mfString    = 0x0000
 	mfChecked   = 0x0008
@@ -297,7 +299,9 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			break
 		}
 		trayMessage := uint32(lParam)
-		log.Printf("tray callback message: 0x%x", trayMessage)
+		if trayMessage != wmMouseMove {
+			log.Printf("tray callback message: 0x%x", trayMessage)
+		}
 		switch trayMessage {
 		case wmRButtonDown, wmRButtonUp, wmContextMenu:
 			t.requestMenu()
@@ -405,7 +409,7 @@ func notifyUpdateCompleted(completedVersion string) {
 			"BiliQueue 更新完成",
 			message,
 		) {
-			return
+			break
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -442,33 +446,55 @@ func (t *trayApp) showMenu() {
 	}
 	t.menuOpen = true
 	defer func() { t.menuOpen = false }()
+	t.app.mu.RLock()
+	autoCheckUpdates := t.app.config.Updates.AutoCheck
+	t.app.mu.RUnlock()
+	items := []nativeui.MenuItem{
+		{ID: menuOpenControl, Label: "打开控制台"},
+		{ID: menuOpenMiniControl, Label: "打开简易控制页"},
+		{ID: menuCopyOverlay, Label: "复制浏览器源地址"},
+		{ID: menuChangePort, Label: "修改端口"},
+		{Separator: true},
+		{ID: menuNextQueue, Label: "下一位"},
+		{ID: menuClearQueue, Label: "清空队列", Danger: true},
+		{ID: menuAutoCheckUpdate, Label: "自动检查更新", Checked: autoCheckUpdates},
+		{ID: menuOpenDataDir, Label: "打开数据文件夹"},
+		{ID: menuOpenLog, Label: "打开日志文件"},
+		{Separator: true},
+		{ID: menuExit, Label: "退出", Danger: true},
+	}
+	var pt point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	if host, err := nativeui.DefaultHost(); err == nil {
+		if cmd, menuErr := host.ShowMenu(items, int(pt.x), int(pt.y)); menuErr == nil {
+			if cmd != 0 {
+				go t.handleMenu(uint16(cmd))
+			}
+			return
+		} else {
+			log.Printf("native tray menu unavailable, using Win32 fallback: %v", menuErr)
+		}
+	}
+	t.showStandardMenu(items, pt)
+}
+
+func (t *trayApp) showStandardMenu(items []nativeui.MenuItem, pt point) {
 	menu, _, _ := procCreatePopupMenu.Call()
 	if menu == 0 {
 		return
 	}
 	defer procDestroyMenu.Call(menu)
-	appendMenu(menu, mfString, menuOpenControl, "打开控制台")
-	appendMenu(menu, mfString, menuOpenMiniControl, "打开简易控制页")
-	appendMenu(menu, mfString, menuCopyOverlay, "复制浏览器源地址")
-	appendMenu(menu, mfString, menuChangePort, "修改端口")
-	appendMenu(menu, mfSeparator, 0, "")
-	appendMenu(menu, mfString, menuNextQueue, "下一位")
-	appendMenu(menu, mfString, menuClearQueue, "清空队列")
-	t.app.mu.RLock()
-	autoCheckUpdates := t.app.config.Updates.AutoCheck
-	t.app.mu.RUnlock()
-	updateFlags := uint32(mfString)
-	if autoCheckUpdates {
-		updateFlags |= mfChecked
+	for _, item := range items {
+		if item.Separator {
+			appendMenu(menu, mfSeparator, 0, "")
+			continue
+		}
+		flags := uint32(mfString)
+		if item.Checked {
+			flags |= mfChecked
+		}
+		appendMenu(menu, flags, uint16(item.ID), item.Label)
 	}
-	appendMenu(menu, updateFlags, menuAutoCheckUpdate, "自动检查更新")
-	appendMenu(menu, mfString, menuOpenDataDir, "打开数据文件夹")
-	appendMenu(menu, mfString, menuOpenLog, "打开日志文件")
-	appendMenu(menu, mfSeparator, 0, "")
-	appendMenu(menu, mfString, menuExit, "退出")
-
-	var pt point
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	procSetForegroundWnd.Call(t.hwnd)
 	cmd, _, _ := procTrackPopupMenu.Call(menu, tpmRightButton|tpmReturnCmd, uintptr(pt.x), uintptr(pt.y), 0, t.hwnd, 0)
 	procPostMessageW.Call(t.hwnd, wmNull, 0, 0)

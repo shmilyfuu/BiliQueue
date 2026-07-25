@@ -1,3 +1,38 @@
+# BiliQueue v0.2.0
+
+本版本将非浏览器窗口迁移到 Windows 原生 Direct2D 界面，并移除 WebView2 运行时依赖。网页控制台、OBS 浏览器源页面和现有 HTTP API 保持不变。
+
+## 原生窗口
+
+- 简易控制窗口、修改端口、端口冲突、重复运行、清空队列、通用确认、信息、错误、更新提示和更新进度统一使用 Win32 + Direct2D + DirectWrite。
+- 内嵌设计实验包 v16 的 `theme.json` 与 `layout.json`，正式版不在程序目录生成或编辑主题配置。
+- Windows 11 优先使用系统 Mica；Mica 不可用时自动使用 Direct2D Acrylic 或纯色回退。
+- 更新完成时同时保留 Windows 系统通知和原生完成提示。
+- 托盘右键菜单优先使用 Direct2D 统一样式，初始化失败时回退标准 Win32 菜单。
+
+## 简易控制
+
+- 内容区域保持 `420 × 560`，关闭后隐藏并复用窗口，置顶状态继续保存到 `data/mini-window.json`。
+- 原生窗口直接订阅程序内状态，不通过 HTTP 轮询；队列操作与网页控制台共用同一套命令逻辑。
+- 保留下一位、暂停或继续排队、清空确认、手动添加、移除、队列内滚动和拖拽排序。
+- 保留真实头像、手动用户星标、大航海图标和累计电池数显示。
+- 拖拽到首位或末位均显示插入位置，并在靠近队列上下边缘时自动滚动。
+
+## 依赖与兼容
+
+- 移除 `go-webview2`、WebView2 缺失提示、下载引导、预加载页面和 WebView2 用户数据入口。
+- 不引入 .NET、Windows App SDK、Java、Python或其他用户运行时依赖。
+- 保留 `/mini-control` HTML 页面，作为浏览器入口和非 Windows 平台备用实现。
+- 升级不会修改 `data`、`fonts`、登录凭证、当前队列或头像缓存。旧版 `data/webview2` 不再读取，也不会自动删除。
+
+## 下载文件
+
+- `BiliQueue-v0.2.0-windows.zip`：Windows AMD64 正式包。
+- `BiliQueue-v0.2.0-windows.zip.sha256`：Windows 包 SHA-256 校验文件。
+- `BiliQueue-v0.2.0-source.zip`：完整源码包。
+
+---
+
 # BiliQueue v0.1.18
 
 本版本完善应用内更新过程反馈，并统一 Windows 提示窗口的视觉与生命周期管理。
