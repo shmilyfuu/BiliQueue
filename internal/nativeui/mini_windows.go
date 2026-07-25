@@ -259,6 +259,7 @@ func (w *miniWindow) createInput() {
 	rect := w.miniGeometry().input
 	style := w.host.design.Style("manual.input")
 	editor := editOverlayRect(rect, 10, 10, style.FontSize)
+	editor.Y += 2
 	w.input, _, _ = procCreateWindowExW.Call(
 		wsExTransparent,
 		uintptr(unsafe.Pointer(className)),
@@ -273,8 +274,6 @@ func (w *miniWindow) createInput() {
 	if w.input != 0 {
 		procSendMessageW.Call(w.input, wmSetFont, w.font, 1)
 		procSendMessageW.Call(w.input, emSetMargins, 3, 0)
-		cue, _ := syscall.UTF16PtrFromString("手动添加用户名")
-		procSendMessageW.Call(w.input, emSetCueBanner, 1, uintptr(unsafe.Pointer(cue)))
 		w.oldInputProc, _, _ = procSetWindowLongPtrW.Call(w.input, gwlpWndProc, miniInputCallback)
 		miniInputRegistry.Store(w.input, w)
 	}
@@ -303,6 +302,7 @@ func (w *miniWindow) repositionInput() {
 	rect := w.miniGeometry().input
 	style := w.host.design.Style("manual.input")
 	editor := editOverlayRect(rect, 10, 10, style.FontSize)
+	editor.Y += 2
 	procSetWindowPos.Call(
 		w.input, 0,
 		uintptr(scaleForDPI(editor.X, w.dpi)),
@@ -571,12 +571,6 @@ func (w *miniWindow) proc(message uint32, wParam, lParam uintptr) uintptr {
 			procInvalidateRect.Call(w.hwnd, 0, 0)
 		}
 		return 0
-	case wmSetCursor:
-		if w.hovered != "" {
-			cursor, _, _ := procLoadCursorW.Call(0, idcHand)
-			procSetCursor.Call(cursor)
-			return 1
-		}
 	case wmKeyDown:
 		if wParam == vkEscape && w.modal {
 			w.modal = false
@@ -819,7 +813,23 @@ func (w *miniWindow) draw() {
 	}
 	w.drawButton("toolbar.pause", geometry.pause, pauseText, "pause", false)
 	w.drawButton("toolbar.clear", geometry.clear, "清空队列", "clear", len(w.state.Queue) == 0)
-	renderer.drawVisual(geometry.input, design.Style("manual.input"))
+	inputStyle := design.Style("manual.input")
+	renderer.drawVisual(geometry.input, inputStyle)
+	if readWindowText(w.input) == "" {
+		placeholder := inputStyle.Text
+		if placeholder == "" {
+			placeholder = "手动添加用户名到队列"
+		}
+		renderer.drawText(
+			placeholder,
+			Rect{geometry.input.X + 10, geometry.input.Y, maxInt(1, geometry.input.W-20), geometry.input.H},
+			design.Theme.Typography.Family,
+			inputStyle.FontSize,
+			visualWeight(inputStyle),
+			inputStyle.TextColor,
+			1, 0, 1,
+		)
+	}
 	w.drawButton("manual.add", geometry.add, "添加", "manual.add", false)
 	w.elements = append(w.elements, hitElement{geometry.add, "manual.add"})
 	w.drawQueue(geometry.queue)
@@ -880,7 +890,7 @@ func (w *miniWindow) drawHeader(rect Rect) {
 func (w *miniWindow) drawButton(path string, rect Rect, label, action string, disabled bool) {
 	state := buttonState(action == w.hovered, action == w.pressed)
 	style := buttonVisual(w.host.design.Style(path), state)
-	if action == "clear" || action == "modal.confirm" {
+	if action == "clear" {
 		style = dangerButtonVisual(w.host.design.Style(path), state)
 	}
 	if disabled {
@@ -1111,10 +1121,10 @@ func (w *miniWindow) drawModal() {
 	messageStyle := design.Style("modal.message")
 	renderer.drawText("清空队列", design.LayoutRect("modal.title", Rect{card.X + 20, card.Y + 18, card.W - 40, 28}), design.Theme.Typography.Family, titleStyle.FontSize, visualWeight(titleStyle), titleStyle.TextColor, 1, 0, 1)
 	drawWrapped(renderer, "确定清空当前队列吗？此操作无法撤销。", design.LayoutRect("modal.message", Rect{card.X + 20, card.Y + 50, card.W - 40, 54}), design.Theme.Typography.Family, messageStyle, 0)
-	cancel := design.LayoutRect("modal.cancel", Rect{card.X + 18, footerY + 13, (card.W - 48) / 2, 34})
-	confirm := design.LayoutRect("modal.confirm", Rect{cancel.X + cancel.W + 12, cancel.Y, cancel.W, cancel.H})
-	w.drawButton("modal.cancel", cancel, "取消", "modal.cancel", false)
-	w.drawButton("modal.confirm", confirm, "清空队列", "modal.confirm", false)
+	left := design.LayoutRect("modal.cancel", Rect{card.X + 18, footerY + 13, (card.W - 48) / 2, 34})
+	right := design.LayoutRect("modal.confirm", Rect{left.X + left.W + 12, left.Y, left.W, left.H})
+	w.drawButton("modal.cancel", left, "确认", "modal.confirm", false)
+	w.drawButton("modal.confirm", right, "取消", "modal.cancel", false)
 }
 
 func (w *miniWindow) drawToast() {

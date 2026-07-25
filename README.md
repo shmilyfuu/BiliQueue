@@ -2,7 +2,7 @@
 
 BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供网页控制台和浏览器源横条，可通过弹幕管理排队、取消排队和礼物插队。
 
-> 当前版本：v0.2.0
+> 当前版本：v0.2.1
 
 ## 功能
 
@@ -25,7 +25,7 @@ BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供�
 - 全局背景透明度渐变和三区独立背景
 - 横条文字内容支持手动应用，编辑时不会实时同步到横条
 - Windows 版支持直接双击 exe 静默启动到系统托盘
-- 托盘菜单支持打开控制台、打开简易控制页、复制浏览器源地址、修改端口、下一位、清空队列、自动检查更新、打开数据文件夹、打开日志和退出
+- 托盘菜单支持恢复下载或立即安装已发现的更新，以及打开控制台、打开简易控制页、复制浏览器源地址、修改端口、下一位、清空队列、自动检查更新、打开数据文件夹、打开日志和退出
 - 简易控制页使用 `420 × 560` 内容区域的原生 Direct2D 窗口，可选择置顶并保留置顶状态
 - 支持为打开控制台、打开或关闭简易控制页、下一位和清空队列录制 Windows 全局快捷键
 - 支持 Gitee 优先、GitHub 备用的应用内更新检查和 Windows 正式版自动更新
@@ -37,7 +37,7 @@ BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供�
 请从 [GitHub Releases](https://github.com/shmilyfuu/BiliQueue/releases) 或 [Gitee Releases](https://gitee.com/shmilyfuu/BiliQueue/releases) 下载：
 
 ```text
-BiliQueue-v0.2.0-windows.zip
+BiliQueue-v0.2.1-windows.zip
 ```
 
 解压后推荐直接双击：
@@ -48,7 +48,7 @@ BiliQueue-windows-amd64.exe
 
 启动后请在 Windows 右下角系统托盘区域找到 BiliQueue 图标，右键打开菜单。
 
-Windows 原生窗口使用系统自带的 Win32、Direct2D、DirectWrite 和 DWM，不需要安装 WebView2、.NET、Windows App SDK 或其他运行环境。Windows 11 优先使用 Mica；系统材质不可用时自动使用 Direct2D Acrylic 或纯色回退。
+Windows 原生窗口使用系统自带的 Win32、Direct2D 和 DirectWrite，不需要安装 WebView2、.NET、Windows App SDK 或其他运行环境。窗口统一使用 `#202020` 纯色背景，不依赖 Mica 或 Acrylic 材质。
 
 备用启动脚本：
 
@@ -82,6 +82,14 @@ http://127.0.0.1:18303/overlay
 6. 根据直播需求调整区域尺寸、文字样式、滚动方式、背景渐变和礼物规则。
 
 弹幕指令、空态文字、右侧说明内容和文字样式均可在控制台修改。
+
+## v0.2.1 重点变化
+
+- 原生窗口统一改为 `#202020` 纯色背景，使系统标题栏与内容区域保持一致。
+- 修正简易控制窗口输入框文字、垂直位置和渐变方向，并统一清空队列确认按钮顺序与颜色。
+- 原生窗口和弹窗按钮保持普通箭头光标，真实输入框继续使用系统文本光标。
+- 优化托盘 Direct2D 菜单首次打开的响应；发现新版本后可从托盘继续“下载更新”，下载完成后可直接“立即更新”。
+- 补充托盘更新状态禁用显示和 Win32 菜单回退，并增加更新状态、排队资格组合及关闭/暂停入队的回归测试。
 
 ## v0.2.0 重点变化
 
@@ -285,8 +293,8 @@ mv BiliQueue-windows-amd64-icon.exe BiliQueue-windows-amd64.exe
 仓库只提交已经确认的正式版本。后续测试包按以下方式命名：
 
 ```text
-v0.2.0-test1  本地测试，不创建 Release
-v0.2.0        确认后提交仓库并创建 Release
+v0.2.1-test1  本地测试，不创建 Release
+v0.2.1        确认后提交仓库并创建 Release
 ```
 
 未确认的测试版本不会直接写入仓库。

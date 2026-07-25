@@ -70,7 +70,6 @@ const (
 	htCaption = 2
 
 	idcArrow       = 32512
-	idcHand        = 32649
 	idiApplication = 32512
 
 	imageIcon      = 1
@@ -546,6 +545,14 @@ func applyDWM(hwnd uintptr, material WindowMaterial, borderless bool) bool {
 	procDwmSetWindowAttribute.Call(hwnd, dwmBorderColor, uintptr(unsafe.Pointer(&border)), unsafe.Sizeof(border))
 
 	result, _, _ := procDwmSetWindowAttribute.Call(hwnd, dwmSystemBackdropType, uintptr(unsafe.Pointer(&backdrop)), unsafe.Sizeof(backdrop))
+	if backdrop == dwmBackdropNone {
+		// Keep the non-client title bar under DWM control, but do not extend
+		// glass into the Direct2D client area. The caller paints the client
+		// with the same opaque color as the caption.
+		margins := nativeMargins{}
+		procDwmExtendFrame.Call(hwnd, uintptr(unsafe.Pointer(&margins)))
+		return false
+	}
 	margins := nativeMargins{-1, -1, -1, -1}
 	extended, _, _ := procDwmExtendFrame.Call(hwnd, uintptr(unsafe.Pointer(&margins)))
 	active := !hresultFailed(result) && !hresultFailed(extended)

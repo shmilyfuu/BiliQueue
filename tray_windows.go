@@ -30,12 +30,14 @@ const (
 	wmAppTray          = wmUser + 1
 	wmAppShowMenu      = wmUser + 2
 	wmAppReloadHotkeys = wmUser + 3
+	wmAppMenuResult    = wmUser + 4
 	wmRButtonDown      = 0x0204
 	wmRButtonUp        = 0x0205
 	wmLButtonDblClk    = 0x0203
 	wmMouseMove        = 0x0200
 
 	mfString    = 0x0000
+	mfGrayed    = 0x0001
 	mfChecked   = 0x0008
 	mfSeparator = 0x0800
 
@@ -84,6 +86,8 @@ const (
 	menuExit            = 1010
 	menuNextQueue       = 1011
 	menuAutoCheckUpdate = 1012
+	menuDownloadUpdate  = 1013
+	menuApplyUpdate     = 1014
 
 	hotkeyOpenControl     = 2001
 	hotkeyOpenMiniControl = 2002
@@ -188,9 +192,17 @@ type trayApp struct {
 	iconAdded         bool
 	menuOpen          bool
 	menuPending       bool
+	menuResults       chan trayMenuResult
 	exiting           atomic.Bool
 	hotkeyRequests    chan hotkeyReloadRequest
 	registeredHotkeys []int32
+}
+
+type trayMenuResult struct {
+	command int
+	err     error
+	items   []nativeui.MenuItem
+	point   point
 }
 
 type hotkeyReloadRequest struct {
@@ -255,6 +267,7 @@ func runTray(app *App, controller *ServerController, dataDir string, showIcon bo
 	t := &trayApp{
 		app: app, controller: controller, dataDir: dataDir, hwnd: hwnd,
 		hIcon: hIcon, customIcon: customIcon,
+		menuResults:    make(chan trayMenuResult, 1),
 		hotkeyRequests: make(chan hotkeyReloadRequest, 8),
 	}
 	setActiveTray(t)
@@ -319,6 +332,11 @@ func trayWndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		if t != nil {
 			t.menuPending = false
 			t.showMenu()
+		}
+		return 0
+	case wmAppMenuResult:
+		if t != nil {
+			t.finishMenu()
 		}
 		return 0
 	case wmAppReloadHotkeys:
@@ -445,11 +463,15 @@ func (t *trayApp) showMenu() {
 		return
 	}
 	t.menuOpen = true
-	defer func() { t.menuOpen = false }()
 	t.app.mu.RLock()
 	autoCheckUpdates := t.app.config.Updates.AutoCheck
+	updateStatus := t.app.updateStatus
 	t.app.mu.RUnlock()
-	items := []nativeui.MenuItem{
+	items := make([]nativeui.MenuItem, 0, 15)
+	if updateItem, ok := trayUpdateMenuItem(updateStatus); ok {
+		items = append(items, updateItem, nativeui.MenuItem{Separator: true})
+	}
+	items = append(items, []nativeui.MenuItem{
 		{ID: menuOpenControl, Label: "打开控制台"},
 		{ID: menuOpenMiniControl, Label: "打开简易控制页"},
 		{ID: menuCopyOverlay, Label: "复制浏览器源地址"},
@@ -462,20 +484,48 @@ func (t *trayApp) showMenu() {
 		{ID: menuOpenLog, Label: "打开日志文件"},
 		{Separator: true},
 		{ID: menuExit, Label: "退出", Danger: true},
-	}
+	}...)
 	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	if host, err := nativeui.DefaultHost(); err == nil {
-		if cmd, menuErr := host.ShowMenu(items, int(pt.x), int(pt.y)); menuErr == nil {
-			if cmd != 0 {
-				go t.handleMenu(uint16(cmd))
-			}
-			return
-		} else {
-			log.Printf("native tray menu unavailable, using Win32 fallback: %v", menuErr)
-		}
+	host, err := nativeui.DefaultHost()
+	if err != nil {
+		t.menuOpen = false
+		log.Printf("native tray menu unavailable, using Win32 fallback: %v", err)
+		t.showStandardMenu(items, pt)
+		return
 	}
-	t.showStandardMenu(items, pt)
+	go func() {
+		command, menuErr := host.ShowMenu(items, int(pt.x), int(pt.y))
+		result := trayMenuResult{command: command, err: menuErr, items: items, point: pt}
+		select {
+		case t.menuResults <- result:
+			procPostMessageW.Call(t.hwnd, wmAppMenuResult, 0, 0)
+		default:
+			log.Printf("discarding duplicate native tray menu result")
+		}
+	}()
+}
+
+func (t *trayApp) finishMenu() {
+	var result trayMenuResult
+	select {
+	case result = <-t.menuResults:
+	default:
+		t.menuOpen = false
+		return
+	}
+	t.menuOpen = false
+	if t.exiting.Load() {
+		return
+	}
+	if result.err != nil {
+		log.Printf("native tray menu unavailable, using Win32 fallback: %v", result.err)
+		t.showStandardMenu(result.items, result.point)
+		return
+	}
+	if result.command != 0 {
+		go t.handleMenu(uint16(result.command))
+	}
 }
 
 func (t *trayApp) showStandardMenu(items []nativeui.MenuItem, pt point) {
@@ -492,6 +542,9 @@ func (t *trayApp) showStandardMenu(items []nativeui.MenuItem, pt point) {
 		flags := uint32(mfString)
 		if item.Checked {
 			flags |= mfChecked
+		}
+		if item.Disabled {
+			flags |= mfGrayed
 		}
 		appendMenu(menu, flags, uint16(item.ID), item.Label)
 	}
@@ -532,6 +585,12 @@ func (t *trayApp) handleMenu(id uint16) {
 		if showStyledConfirmDialog("清空队列", "确定清空当前队列吗？此操作无法撤销。") {
 			t.app.clearQueue()
 		}
+	case menuDownloadUpdate:
+		downloadAndPromptUpdate(t.app)
+	case menuApplyUpdate:
+		if err := t.app.applyPreparedUpdate(); err != nil {
+			showErrorDialog("更新失败", err.Error())
+		}
 	case menuAutoCheckUpdate:
 		t.app.mu.RLock()
 		enabled := t.app.config.Updates.AutoCheck
@@ -547,6 +606,21 @@ func (t *trayApp) handleMenu(id uint16) {
 			closeActivePrompt()
 			procPostMessageW.Call(t.hwnd, wmClose, 0, 0)
 		}
+	}
+}
+
+func trayUpdateMenuItem(status UpdateStatus) (nativeui.MenuItem, bool) {
+	switch {
+	case status.Installing:
+		return nativeui.MenuItem{Label: "正在更新…", Disabled: true}, true
+	case status.Downloading:
+		return nativeui.MenuItem{Label: "正在下载更新…", Disabled: true}, true
+	case strings.TrimSpace(status.PreparedVersion) != "":
+		return nativeui.MenuItem{ID: menuApplyUpdate, Label: "立即更新"}, true
+	case status.Latest != nil && status.Latest.Available:
+		return nativeui.MenuItem{ID: menuDownloadUpdate, Label: "下载更新"}, true
+	default:
+		return nativeui.MenuItem{}, false
 	}
 }
 

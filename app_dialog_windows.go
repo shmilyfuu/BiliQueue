@@ -13,7 +13,7 @@ import (
 )
 
 func preloadAppDialogHost() {
-	go func() { _ = nativeui.Preload() }()
+	_ = nativeui.Preload()
 }
 
 func promptListenAddress(title, message, defaultValue string) (string, bool) {
@@ -61,7 +61,7 @@ func splitListenAddress(value string) (string, string) {
 }
 
 func showStyledConfirmDialog(title, message string) bool {
-	return showStyledChoiceDialogWithTarget("clearQueue", nativeui.DialogDanger, title, message, "确定", "取消")
+	return showStyledChoiceDialogWithTarget("clearQueue", nativeui.DialogConfirm, title, message, "确定", "取消")
 }
 
 func showStyledChoiceDialog(title, message, confirmText, cancelText string) bool {

@@ -56,7 +56,7 @@ func maxInt(a, b int) int {
 }
 
 func linearGradientHalfVector(width, height float64, angle int) (float64, float64) {
-	radians := float64(angle-90) * math.Pi / 180
+	radians := float64(angle) * math.Pi / 180
 	dx, dy := math.Cos(radians), math.Sin(radians)
 	scale := math.Abs(width*dx) + math.Abs(height*dy)
 	return dx * scale / 2, dy * scale / 2

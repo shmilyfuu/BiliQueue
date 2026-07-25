@@ -1,7 +1,7 @@
 {
   "schemaVersion": 16,
   "material": {
-    "backdrop": "mica",
+    "backdrop": "none",
     "windowOpacity": 100,
     "backgroundOpacity": 0,
     "tintColor": "#202020",
@@ -11,11 +11,11 @@
     "titleBarFollowBackground": true,
     "titleBarColor": "#202020",
     "titleBarTextColor": "#FFFFFF",
-    "titleBarBorderColor": "#373737"
+    "titleBarBorderColor": "#202020"
   },
   "targetMaterials": {
     "clearQueue": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -25,10 +25,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "copyURLFailed": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -38,10 +38,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "duplicateInstance": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -51,10 +51,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "genericConfirm": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -64,10 +64,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "genericError": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -77,10 +77,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "genericInfo": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -90,10 +90,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "portChange": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -103,10 +103,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "portConflict": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -116,10 +116,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "startupFailed": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -129,10 +129,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "updateAvailable": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -142,10 +142,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "updateComplete": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -155,10 +155,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "updateFailed": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -168,10 +168,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "updateProgress": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -181,10 +181,10 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     },
     "updateReady": {
-      "backdrop": "mica",
+      "backdrop": "none",
       "windowOpacity": 100,
       "backgroundOpacity": 0,
       "tintColor": "#202020",
@@ -194,7 +194,7 @@
       "titleBarFollowBackground": true,
       "titleBarColor": "#202020",
       "titleBarTextColor": "#FFFFFF",
-      "titleBarBorderColor": "#424244"
+      "titleBarBorderColor": "#202020"
     }
   },
   "colors": {
@@ -645,8 +645,8 @@
       },
       "borderColor": "#66738A",
       "borderWidth": 1,
-      "text": "手动添加用户名",
-      "textColor": "#D1D1D1",
+      "text": "手动添加用户名到队列",
+      "textColor": "#CDCDCD",
       "radius": 4,
       "fontSize": 12,
       "fontWeight": 400
@@ -2554,7 +2554,7 @@
       "fontWeight": 600
     },
     "targets.clearQueue.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -3037,7 +3037,7 @@
       "fontWeight": 600
     },
     "targets.copyURLFailed.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -3520,7 +3520,7 @@
       "fontWeight": 600
     },
     "targets.duplicateInstance.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -4070,7 +4070,7 @@
       "fontWeight": 600
     },
     "targets.genericConfirm.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -4553,7 +4553,7 @@
       "fontWeight": 600
     },
     "targets.genericError.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -5036,7 +5036,7 @@
       "fontWeight": 600
     },
     "targets.genericInfo.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -5663,7 +5663,7 @@
       "fontWeight": 600
     },
     "targets.portChange.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -6357,7 +6357,7 @@
       "fontWeight": 600
     },
     "targets.portConflict.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -6840,7 +6840,7 @@
       "fontWeight": 600
     },
     "targets.startupFailed.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -7390,7 +7390,7 @@
       "fontWeight": 600
     },
     "targets.updateAvailable.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -7873,7 +7873,7 @@
       "fontWeight": 600
     },
     "targets.updateComplete.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -8356,7 +8356,7 @@
       "fontWeight": 600
     },
     "targets.updateFailed.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -9041,7 +9041,7 @@
       "fontWeight": 600
     },
     "targets.updateProgress.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -9591,7 +9591,7 @@
       "fontWeight": 600
     },
     "targets.updateReady.window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -10525,7 +10525,7 @@
       "fontWeight": 400
     },
     "window.background": {
-      "material": "acrylic",
+      "material": "normal",
       "acrylic": {
         "enabled": false,
         "blur": 64,
@@ -10534,27 +10534,27 @@
         "luminosityOpacity": 0,
         "noiseOpacity": 0
       },
-      "fillDisabled": true,
+      "fillDisabled": false,
       "borderDisabled": true,
       "borderPosition": "inside",
       "fill": {
-        "type": "linear",
+        "type": "solid",
         "stops": [
           {
             "position": 0,
-            "color": "#1D2842",
+            "color": "#202020",
             "opacity": 100
           },
           {
             "position": 100,
-            "color": "#0A0D14",
+            "color": "#202020",
             "opacity": 100
           }
         ],
-        "color1": "#1D2842",
-        "color2": "#0A0D14",
-        "opacity": 24,
-        "angle": 176,
+        "color1": "#202020",
+        "color2": "#202020",
+        "opacity": 100,
+        "angle": 0,
         "stop": 50,
         "centerX": 50,
         "centerY": 30,

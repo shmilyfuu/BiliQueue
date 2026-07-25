@@ -126,6 +126,8 @@ func (h *Host) createMenu(items []MenuItem, screenX, screenY int) (*menuWindow, 
 	procUpdateWindow.Call(hwnd)
 	procSetForegroundWindow.Call(hwnd)
 	procSetCapture.Call(hwnd)
+	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
+	procSetCursor.Call(cursor)
 	return menu, nil
 }
 
@@ -150,6 +152,10 @@ func (m *menuWindow) proc(message uint32, wParam, lParam uintptr) uintptr {
 	case wmPaint:
 		m.paint()
 		return 0
+	case wmSetCursor:
+		cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
+		procSetCursor.Call(cursor)
+		return 1
 	case wmMouseMove:
 		x, y := m.logicalPoint(lParam)
 		hover := m.indexAt(x, y)
@@ -171,7 +177,7 @@ func (m *menuWindow) proc(message uint32, wParam, lParam uintptr) uintptr {
 	case wmLButtonUp, wmRButtonUp:
 		x, y := m.logicalPoint(lParam)
 		index := m.indexAt(x, y)
-		if index >= 0 && index == m.selected && !m.entries[index].item.Separator {
+		if index >= 0 && index == m.selected && !m.entries[index].item.Separator && !m.entries[index].item.Disabled {
 			m.resolve(m.entries[index].item.ID)
 		} else if index < 0 {
 			m.resolve(0)
@@ -190,7 +196,7 @@ func (m *menuWindow) proc(message uint32, wParam, lParam uintptr) uintptr {
 			if index < 0 {
 				index = m.hover
 			}
-			if index >= 0 && !m.entries[index].item.Separator {
+			if index >= 0 && !m.entries[index].item.Separator && !m.entries[index].item.Disabled {
 				m.resolve(m.entries[index].item.ID)
 			}
 		}
@@ -217,7 +223,7 @@ func (m *menuWindow) logicalPoint(lParam uintptr) (int, int) {
 
 func (m *menuWindow) indexAt(x, y int) int {
 	for index, entry := range m.entries {
-		if !entry.item.Separator && entry.rect.Contains(x, y) {
+		if !entry.item.Separator && !entry.item.Disabled && entry.rect.Contains(x, y) {
 			return index
 		}
 	}
@@ -231,7 +237,7 @@ func (m *menuWindow) moveSelection(direction int) {
 	index := m.selected
 	for step := 0; step < len(m.entries); step++ {
 		index = (index + direction + len(m.entries)) % len(m.entries)
-		if !m.entries[index].item.Separator {
+		if !m.entries[index].item.Separator && !m.entries[index].item.Disabled {
 			m.selected = index
 			m.hover = index
 			procInvalidateRect.Call(m.hwnd, 0, 0)
@@ -300,6 +306,10 @@ func (m *menuWindow) paint() {
 		if entry.item.Checked {
 			m.renderer.drawText("✓", Rect{entry.rect.X + 10, entry.rect.Y, 20, entry.rect.H}, m.host.design.Theme.Typography.Family, 13, 600, "#60CDFF", 1, 1, 1)
 		}
-		m.renderer.drawText(entry.item.Label, Rect{entry.rect.X + 38, entry.rect.Y, entry.rect.W - 48, entry.rect.H}, m.host.design.Theme.Typography.Family, m.host.design.Theme.Typography.BodySize, 400, m.host.design.Theme.Colors.TextPrimary, 1, 0, 1)
+		textColor := m.host.design.Theme.Colors.TextPrimary
+		if entry.item.Disabled {
+			textColor = m.host.design.Theme.Colors.TextMuted
+		}
+		m.renderer.drawText(entry.item.Label, Rect{entry.rect.X + 38, entry.rect.Y, entry.rect.W - 48, entry.rect.H}, m.host.design.Theme.Typography.Family, m.host.design.Theme.Typography.BodySize, 400, textColor, 1, 0, 1)
 	}
 }

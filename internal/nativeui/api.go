@@ -80,6 +80,7 @@ type MenuItem struct {
 	ID        int
 	Label     string
 	Checked   bool
+	Disabled  bool
 	Separator bool
 	Danger    bool
 }

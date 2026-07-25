@@ -157,6 +157,108 @@ func TestQueueIdentityEligibility(t *testing.T) {
 	}
 }
 
+func TestQueueIdentityEligibilityCombinations(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.mu.Lock()
+	a.resolvedRoomID = 7788
+	a.anchorUID = 9988
+	a.mu.Unlock()
+
+	tests := []struct {
+		name string
+		cfg  QueueEligibilityConfig
+		msg  ChatMessage
+		want bool
+	}{
+		{
+			name: "unrestricted",
+			msg:  ChatMessage{UID: 1},
+			want: true,
+		},
+		{
+			name: "fan medal matches anchor",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10},
+			msg:  ChatMessage{UID: 2, MedalLevel: 10, MedalTargetUID: 9988},
+			want: true,
+		},
+		{
+			name: "fan medal matches room",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10},
+			msg:  ChatMessage{UID: 3, MedalLevel: 10, MedalRoomID: 7788},
+			want: true,
+		},
+		{
+			name: "fan medal belongs to another room",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10},
+			msg:  ChatMessage{UID: 4, MedalLevel: 20, MedalRoomID: 8877, MedalTargetUID: 8899},
+		},
+		{
+			name: "guard qualifies",
+			cfg:  QueueEligibilityConfig{GuardEnabled: true},
+			msg:  ChatMessage{UID: 5, GuardLevel: 3},
+			want: true,
+		},
+		{
+			name: "invalid guard does not qualify",
+			cfg:  QueueEligibilityConfig{GuardEnabled: true},
+			msg:  ChatMessage{UID: 6, GuardLevel: 4},
+		},
+		{
+			name: "either fan medal qualifies",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10, GuardEnabled: true},
+			msg:  ChatMessage{UID: 7, MedalLevel: 10, MedalCurrentRoom: true},
+			want: true,
+		},
+		{
+			name: "either guard qualifies",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10, GuardEnabled: true},
+			msg:  ChatMessage{UID: 8, GuardLevel: 1},
+			want: true,
+		},
+		{
+			name: "neither condition qualifies",
+			cfg:  QueueEligibilityConfig{FanMedalEnabled: true, FanMedalLevel: 10, GuardEnabled: true},
+			msg:  ChatMessage{UID: 9, MedalLevel: 9, MedalCurrentRoom: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			a.mu.Lock()
+			a.config.Eligibility = test.cfg
+			a.mu.Unlock()
+			if got := a.canJoinByIdentity(test.msg); got != test.want {
+				t.Fatalf("canJoinByIdentity() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestQueueAdmissionStopsWhenDisabledOrPaused(t *testing.T) {
+	a := newApp(t.TempDir())
+	a.mu.Lock()
+	a.config.QueueEnabled = false
+	a.config.GiftPriority.PaidQueueEnabled = true
+	a.config.GiftPriority.QueueThresholdBattery = 100
+	a.mu.Unlock()
+
+	a.processMessage(ChatMessage{UID: 1, Username: "弹幕用户", Text: "排队"})
+	a.processGift(GiftMessage{EventID: "disabled-paid-queue", UID: 2, Username: "礼物用户", GiftName: "礼物", CoinType: "gold", Battery: 100})
+	if queue := a.state().Queue; len(queue) != 0 {
+		t.Fatalf("disabled queue accepted a user: %#v", queue)
+	}
+
+	a.mu.Lock()
+	a.config.QueueEnabled = true
+	a.paused = true
+	a.mu.Unlock()
+	a.processMessage(ChatMessage{UID: 3, Username: "暂停弹幕用户", Text: "排队"})
+	a.processGift(GiftMessage{EventID: "paused-paid-queue", UID: 4, Username: "暂停礼物用户", GiftName: "礼物", CoinType: "gold", Battery: 100})
+	if queue := a.state().Queue; len(queue) != 0 {
+		t.Fatalf("paused queue accepted a user: %#v", queue)
+	}
+}
+
 func TestGuardPriorityRanksAboveGiftPriority(t *testing.T) {
 	a := newApp(t.TempDir())
 	a.mu.Lock()

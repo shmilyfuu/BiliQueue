@@ -438,12 +438,6 @@ func (w *window) proc(message uint32, wParam, lParam uintptr) uintptr {
 		w.pressed = ""
 		procInvalidateRect.Call(w.hwnd, 0, 0)
 		return 0
-	case wmSetCursor:
-		if w.hovered != "" {
-			cursor, _, _ := procLoadCursorW.Call(0, idcHand)
-			procSetCursor.Call(cursor)
-			return 1
-		}
 	case wmKeyDown:
 		switch wParam {
 		case vkEscape:

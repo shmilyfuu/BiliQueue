@@ -125,6 +125,7 @@ type direct2DRenderer struct {
 	backgroundPixels []uint32
 	blurBitmaps      map[int]uintptr
 	bgKey            string
+	backgroundSolid  bool
 	dpi              float32
 	generation       uint64
 }
@@ -258,6 +259,7 @@ func (r *direct2DRenderer) releaseBitmaps() {
 	}
 	r.blurBitmaps = map[int]uintptr{}
 	r.backgroundPixels = nil
+	r.backgroundSolid = false
 }
 
 func (r *direct2DRenderer) release() {
@@ -707,11 +709,23 @@ func generateNoiseBitmap(w, h int) []uint32 {
 }
 
 func (r *direct2DRenderer) ensureBackground(theme Theme) {
-	key := fmt.Sprintf("%dx%d|%s|%d|%d|%d|%d|%v", r.width, r.height, theme.Material.TintColor, theme.Material.TintOpacity, theme.Material.BackgroundOpacity, theme.Material.BlurStrength, theme.Material.NoiseOpacity, theme.Styles["window.background"].Fill.Stops)
+	key := fmt.Sprintf("%dx%d|%s|%s|%d|%d|%d|%d|%v", r.width, r.height, theme.Material.Backdrop, theme.Material.TintColor, theme.Material.TintOpacity, theme.Material.BackgroundOpacity, theme.Material.BlurStrength, theme.Material.NoiseOpacity, theme.Styles["window.background"].Fill.Stops)
 	if key == r.bgKey && r.backgroundBitmap != 0 {
 		return
 	}
 	r.releaseBitmaps()
+	if strings.EqualFold(theme.Material.Backdrop, "none") {
+		red, green, blue := colorInts(theme.Material.TintColor)
+		pixel := premulBGRA(red, green, blue, clampInt(theme.Material.TintOpacity*255/100, 0, 255))
+		r.backgroundPixels = make([]uint32, r.width*r.height)
+		for i := range r.backgroundPixels {
+			r.backgroundPixels[i] = pixel
+		}
+		r.backgroundBitmap = r.createBitmap(r.backgroundPixels, r.width, r.height)
+		r.backgroundSolid = true
+		r.bgKey = key
+		return
+	}
 	base, _ := generateAcrylicBackground(r.width, r.height, theme)
 	diffused := blurPremul(base, r.width, r.height, maxInt(1, theme.Material.BlurStrength/4))
 	r.backgroundPixels = diffused
@@ -721,6 +735,9 @@ func (r *direct2DRenderer) ensureBackground(theme Theme) {
 }
 
 func (r *direct2DRenderer) bitmapForBlur(radius int) uintptr {
+	if r.backgroundSolid {
+		return r.backgroundBitmap
+	}
 	radius = clampInt(radius, 1, 64)
 	if b := r.blurBitmaps[radius]; b != 0 {
 		return b

@@ -1,6 +1,9 @@
 package nativeui
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestEmbeddedDesign(t *testing.T) {
 	design, err := LoadDesign()
@@ -21,6 +24,40 @@ func TestEmbeddedDesign(t *testing.T) {
 		if _, ok := design.Theme.TargetMaterials[target]; !ok {
 			t.Fatalf("missing material for %s", target)
 		}
+	}
+}
+
+func TestEmbeddedDesignUsesSolidWindowBackgrounds(t *testing.T) {
+	design, err := LoadDesign()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSolid := func(name string, material WindowMaterial, style ElementVisual) {
+		t.Helper()
+		if material.Backdrop != "none" {
+			t.Fatalf("%s backdrop = %q, want none", name, material.Backdrop)
+		}
+		if material.TintColor != "#202020" || material.TitleBarColor != "#202020" || material.TitleBarBorderColor != "#202020" {
+			t.Fatalf("%s colors = tint %q, title %q, border %q", name, material.TintColor, material.TitleBarColor, material.TitleBarBorderColor)
+		}
+		if style.Material != "normal" || style.FillDisabled || style.Fill.Color1 != "#202020" || style.Fill.Color2 != "#202020" || style.Fill.Opacity != 100 {
+			t.Fatalf("%s background style is not opaque #202020: %#v", name, style)
+		}
+	}
+	assertSolid("miniControl", design.MaterialFor("miniControl"), design.Style("window.background"))
+	for name, material := range design.Theme.TargetMaterials {
+		assertSolid(name, material, design.Style("targets."+name+".window.background"))
+	}
+}
+
+func TestLinearGradientAnglesMatchDesignCoordinates(t *testing.T) {
+	dx, dy := linearGradientHalfVector(100, 40, 0)
+	if dx <= 0 || math.Abs(dy) > 0.0001 {
+		t.Fatalf("0 degree vector = (%f, %f), want left to right", dx, dy)
+	}
+	dx, dy = linearGradientHalfVector(100, 40, 90)
+	if math.Abs(dx) > 0.0001 || dy <= 0 {
+		t.Fatalf("90 degree vector = (%f, %f), want top to bottom", dx, dy)
 	}
 }
 

@@ -89,10 +89,18 @@ func notifyUpdateAvailable(app *App, info UpdateInfo) {
 	if !showStyledChoiceDialog("发现新版本", message, "下载更新", "稍后") {
 		return
 	}
+	downloadAndPromptUpdate(app)
+}
+
+func downloadAndPromptUpdate(app *App) {
 	if _, err := app.downloadLatestUpdate(context.Background()); err != nil {
 		showErrorDialog("更新失败", err.Error())
 		return
 	}
+	promptPreparedUpdate(app)
+}
+
+func promptPreparedUpdate(app *App) {
 	if showStyledChoiceDialog("更新已下载", "更新包已经下载并解压完成。请选择更新时间。", "立即更新", "下次启动时更新") {
 		if err := app.applyPreparedUpdate(); err != nil {
 			showErrorDialog("更新失败", err.Error())

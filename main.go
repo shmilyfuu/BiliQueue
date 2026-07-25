@@ -243,7 +243,7 @@ type App struct {
 	updateInstallMu      sync.Mutex
 }
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
