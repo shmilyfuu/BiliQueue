@@ -84,7 +84,7 @@ http://127.0.0.1:18303/overlay
 弹幕指令、空态文字、右侧说明内容和文字样式均可在控制台修改。
 
 <details open>
-<summary>## v0.2.1 重点变化</summary>
+<summary><h2>v0.2.1 重点变化</h2></summary>
 
 - 使系统标题栏与内容区域保持一致。
 - 优化托盘 Direct2D 菜单首次打开的响应；发现新版本后可从托盘继续“下载更新”，下载完成后可直接“立即更新”。
@@ -93,7 +93,7 @@ http://127.0.0.1:18303/overlay
 </details>
 
 <details>
-<summary>历史变化</summary>
+<summary><h2>历史变化</h2></summary>
 ## v0.2.0 重点变化
 
 - 简易控制窗口、修改端口、重复运行、清空队列、更新进度及通用信息窗口迁移为 Win32 + Direct2D + DirectWrite 原生实现。
