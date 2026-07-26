@@ -2,7 +2,7 @@
 
 BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供网页控制台和浏览器源横条，可通过弹幕管理排队、取消排队和礼物插队。
 
-> 当前版本：v0.2.1
+> 当前版本：v0.2.2
 
 ## 功能
 
@@ -36,7 +36,7 @@ BiliQueue 是一个本地运行的 B 站直播横向排队工具。程序提供�
 请从 [GitHub Releases](https://github.com/shmilyfuu/BiliQueue/releases) 或 [Gitee Releases](https://gitee.com/shmilyfuu/BiliQueue/releases) 下载：
 
 ```text
-BiliQueue-v0.2.1-windows.zip
+BiliQueue-v0.2.2-windows.zip
 ```
 
 解压后推荐直接双击：
@@ -83,16 +83,23 @@ http://127.0.0.1:18303/overlay
 弹幕指令、空态文字、右侧说明内容和文字样式均可在控制台修改。
 
 <details open>
-<summary><h2>v0.2.1 重点变化</h2></summary>
+<summary><h2>v0.2.2 重点变化</h2></summary>
 
-- 使系统标题栏与内容区域保持一致。
-- 优化托盘 Direct2D 菜单首次打开的响应；发现新版本后可从托盘继续“下载更新”，下载完成后可直接“立即更新”。
-- 托盘在更新下载或安装期间会显示灰色不可点击状态，自绘菜单与系统备用菜单行为一致。
+- 控制台更新日志改为动态读取 Gitee 与 GitHub Release，不再依赖编译进程序的固定历史文档。
+- 同版本优先显示 Gitee 内容，并由 GitHub 补齐 Gitee 已清理的更早历史版本。
+- 更新日志按版本从新到旧排序并缓存 15 分钟；两个平台都无法访问时会显示错误并提供重试。
+- `RELEASE_NOTES.md` 继续作为开发记录和双平台 Release 正文的发布来源。
 
 </details>
 
 <details>
 <summary><h2>历史变化</h2></summary>
+## v0.2.1 重点变化
+
+- 使系统标题栏与内容区域保持一致。
+- 优化托盘 Direct2D 菜单首次打开的响应；发现新版本后可从托盘继续“下载更新”，下载完成后可直接“立即更新”。
+- 托盘在更新下载或安装期间会显示灰色不可点击状态，自绘菜单与系统备用菜单行为一致。
+
 ## v0.2.0 重点变化
 
 - 简易控制窗口、修改端口、重复运行、清空队列、更新进度及通用信息窗口迁移为 Win32 + Direct2D + DirectWrite 原生实现。
@@ -297,8 +304,8 @@ mv BiliQueue-windows-amd64-icon.exe BiliQueue-windows-amd64.exe
 仓库只提交已经确认的正式版本。后续测试包按以下方式命名：
 
 ```text
-v0.2.1-test1  本地测试，不创建 Release
-v0.2.1        确认后提交仓库并创建 Release
+v0.2.2-test1  本地测试，不创建 Release
+v0.2.2        确认后提交仓库并创建 Release
 ```
 
 未确认的测试版本不会直接写入仓库。

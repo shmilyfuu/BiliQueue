@@ -1,3 +1,34 @@
+# BiliQueue v0.2.2
+
+本版本将控制台更新日志切换为双平台 Release 动态数据，使已发布版本的说明可以在缓存刷新后同步到应用内。队列、礼物、原生窗口、OBS 浏览器源页面和现有更新安装流程保持不变。
+
+## 动态更新日志
+
+- 控制台更新日志由本机 Go 服务读取 Gitee 和 GitHub 的正式 Release 列表，不再解析编译进程序的固定历史文档。
+- 同版本优先采用 Gitee Release 正文，并使用 GitHub 补齐 Gitee 保留策略已清理的更早历史版本。
+- 过滤草稿、预发布和无效版本标签，合并后按版本号从新到旧排序。
+- Release 列表在进程内缓存 15 分钟，减少重复访问；重启程序会重新读取。
+- Gitee 列表不可用时由 GitHub 独立接管；两个平台都不可用时，更新日志弹窗显示错误并提供重试。
+- `RELEASE_NOTES.md` 继续保留为准确的开发与版本记录，并由发布工作流提取当前章节写入 GitHub 和 Gitee Release。
+
+## 更新兼容
+
+- 更新检测仍读取最新正式 Release，并直接下载最新完整 Windows 包，不要求逐版本升级。
+- 更新包下载、SHA-256 校验、解压、立即更新、下次启动更新及托盘入口保持原有逻辑。
+
+## 验证
+
+- 增加 Release 列表过滤、排序、双源合并、Gitee 优先、GitHub 回退、缓存和本机 API 响应测试。
+- 使用独立 `go run` 实例验证真实双平台 Release 数据与缓存命中，不影响正式运行实例。
+
+## 下载文件
+
+- `BiliQueue-v0.2.2-windows.zip`：Windows AMD64 正式包。
+- `BiliQueue-v0.2.2-windows.zip.sha256`：Windows 包 SHA-256 校验文件。
+- `BiliQueue-v0.2.2-source.zip`：完整源码包。
+
+---
+
 # BiliQueue v0.2.1
 
 本版本完善 Windows 原生窗口视觉与交互，并为应用内更新补充托盘恢复入口。网页控制台、OBS 浏览器源页面、排队规则和现有 HTTP API 保持不变。

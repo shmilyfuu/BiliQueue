@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,14 +14,17 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	updateInitialDelay = 10 * time.Second
 	updateCheckPeriod  = 24 * time.Hour
+	releaseNotesTTL    = 15 * time.Minute
 	maxUpdateBytes     = 200 << 20
 	updateWorkspaceDir = ".biliqueue-update"
 )
@@ -30,13 +32,11 @@ const (
 var (
 	giteeLatestReleaseURL  = "https://gitee.com/api/v5/repos/shmilyfuu/BiliQueue/releases/latest"
 	githubLatestReleaseURL = "https://api.github.com/repos/shmilyfuu/BiliQueue/releases/latest"
+	giteeReleasesURL       = "https://gitee.com/api/v5/repos/shmilyfuu/BiliQueue/releases"
+	githubReleasesURL      = "https://api.github.com/repos/shmilyfuu/BiliQueue/releases?per_page=100&page=1"
 	versionPattern         = regexp.MustCompile(`(?i)^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9a-z.-]+))?$`)
-	releaseNoteHeading     = regexp.MustCompile(`(?im)^#{1,6}\s+BiliQueue\s+v([0-9][0-9a-z.-]*)\s*$`)
 	updateExecutablePath   = os.Executable
 )
-
-//go:embed RELEASE_NOTES.md
-var releaseNotesMarkdown string
 
 type UpdateInfo struct {
 	Available   bool   `json:"available"`
@@ -75,9 +75,25 @@ type updateDownloadProgress struct {
 	BytesPerSecond  int64
 }
 
-type embeddedReleaseNote struct {
-	Version string `json:"version"`
-	Notes   string `json:"notes"`
+type releaseNote struct {
+	Version   string `json:"version"`
+	Notes     string `json:"notes"`
+	Source    string `json:"source"`
+	PageURL   string `json:"pageUrl,omitempty"`
+	Published string `json:"publishedAt,omitempty"`
+}
+
+type releaseNotesCatalog struct {
+	Releases  []releaseNote `json:"releases"`
+	Sources   []string      `json:"sources"`
+	FetchedAt int64         `json:"fetchedAt"`
+	Cached    bool          `json:"cached"`
+}
+
+type releaseNotesCache struct {
+	mu        sync.Mutex
+	catalog   releaseNotesCatalog
+	expiresAt time.Time
 }
 
 type releaseAsset struct {
@@ -87,17 +103,22 @@ type releaseAsset struct {
 }
 
 type releaseResponse struct {
-	ID      int            `json:"id"`
-	TagName string         `json:"tag_name"`
-	Name    string         `json:"name"`
-	Body    string         `json:"body"`
-	HTMLURL string         `json:"html_url"`
-	Assets  []releaseAsset `json:"assets"`
+	ID          int            `json:"id"`
+	TagName     string         `json:"tag_name"`
+	Name        string         `json:"name"`
+	Body        string         `json:"body"`
+	HTMLURL     string         `json:"html_url"`
+	Assets      []releaseAsset `json:"assets"`
+	Draft       bool           `json:"draft"`
+	Prerelease  bool           `json:"prerelease"`
+	CreatedAt   string         `json:"created_at"`
+	PublishedAt string         `json:"published_at"`
 }
 
 type updateSource struct {
 	Name           string
 	LatestURL      string
+	ReleasesURL    string
 	AttachmentsURL string
 	PageBase       string
 }
@@ -111,32 +132,6 @@ type preparedUpdate struct {
 
 type deferredUpdateMarker struct {
 	Version string `json:"version"`
-}
-
-func latestEmbeddedReleaseNotes() string {
-	notes := strings.TrimSpace(strings.ReplaceAll(releaseNotesMarkdown, "\r\n", "\n"))
-	if index := strings.Index(notes, "\n---\n"); index >= 0 {
-		notes = strings.TrimSpace(notes[:index])
-	}
-	return notes
-}
-
-func embeddedReleaseNotes() []embeddedReleaseNote {
-	notes := strings.TrimSpace(strings.ReplaceAll(releaseNotesMarkdown, "\r\n", "\n"))
-	sections := strings.Split(notes, "\n---\n")
-	releases := make([]embeddedReleaseNote, 0, len(sections))
-	for _, section := range sections {
-		section = strings.TrimSpace(section)
-		match := releaseNoteHeading.FindStringSubmatchIndex(section)
-		if match == nil {
-			continue
-		}
-		releases = append(releases, embeddedReleaseNote{
-			Version: section[match[2]:match[3]],
-			Notes:   strings.TrimSpace(section[match[1]:]),
-		})
-	}
-	return releases
 }
 
 func parseVersion(value string) ([3]int, string, bool) {
@@ -175,6 +170,145 @@ func compareVersions(left, right string) int {
 		return -1
 	}
 	return strings.Compare(lPre, rPre)
+}
+
+func fetchReleaseNotes(ctx context.Context, client *http.Client, source updateSource) ([]releaseNote, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.ReleasesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "BiliQueue-Updater/"+version)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s Release 列表返回 HTTP %d", source.Name, resp.StatusCode)
+	}
+	var releases []releaseResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("解析 %s Release 列表：%w", source.Name, err)
+	}
+	notes := make([]releaseNote, 0, len(releases))
+	for _, release := range releases {
+		if release.Draft || release.Prerelease {
+			continue
+		}
+		releaseVersion := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
+		if _, _, ok := parseVersion(releaseVersion); !ok {
+			continue
+		}
+		pageURL := strings.TrimSpace(release.HTMLURL)
+		if pageURL == "" {
+			pageURL = source.PageBase + "/releases/tag/" + release.TagName
+		}
+		published := strings.TrimSpace(release.PublishedAt)
+		if published == "" {
+			published = strings.TrimSpace(release.CreatedAt)
+		}
+		notes = append(notes, releaseNote{
+			Version:   releaseVersion,
+			Notes:     strings.TrimSpace(release.Body),
+			Source:    source.Name,
+			PageURL:   pageURL,
+			Published: published,
+		})
+	}
+	sort.SliceStable(notes, func(i, j int) bool {
+		return compareVersions(notes[i].Version, notes[j].Version) > 0
+	})
+	return notes, nil
+}
+
+func mergeReleaseNotes(primary, fallback []releaseNote) []releaseNote {
+	merged := make([]releaseNote, 0, len(primary)+len(fallback))
+	byVersion := make(map[string]int, len(primary)+len(fallback))
+	appendNotes := func(entries []releaseNote, preferExisting bool) {
+		for _, entry := range entries {
+			key := strings.ToLower(strings.TrimSpace(entry.Version))
+			if key == "" {
+				continue
+			}
+			if index, exists := byVersion[key]; exists {
+				if preferExisting && strings.TrimSpace(merged[index].Notes) == "" && strings.TrimSpace(entry.Notes) != "" {
+					merged[index].Notes = entry.Notes
+				}
+				continue
+			}
+			byVersion[key] = len(merged)
+			merged = append(merged, entry)
+		}
+	}
+	appendNotes(primary, false)
+	appendNotes(fallback, true)
+	sort.SliceStable(merged, func(i, j int) bool {
+		return compareVersions(merged[i].Version, merged[j].Version) > 0
+	})
+	return merged
+}
+
+func fetchReleaseNotesCatalog(ctx context.Context) (releaseNotesCatalog, error) {
+	client := &http.Client{Timeout: 12 * time.Second}
+	sources := []updateSource{
+		{Name: "Gitee", ReleasesURL: giteeReleasesURL, PageBase: "https://gitee.com/shmilyfuu/BiliQueue"},
+		{Name: "GitHub", ReleasesURL: githubReleasesURL, PageBase: "https://github.com/shmilyfuu/BiliQueue"},
+	}
+	type result struct {
+		index    int
+		releases []releaseNote
+		err      error
+	}
+	results := make(chan result, len(sources))
+	for index, source := range sources {
+		go func(index int, source updateSource) {
+			releases, err := fetchReleaseNotes(ctx, client, source)
+			results <- result{index: index, releases: releases, err: err}
+		}(index, source)
+	}
+	fetched := make([][]releaseNote, len(sources))
+	errs := make([]error, len(sources))
+	for range sources {
+		result := <-results
+		fetched[result.index] = result.releases
+		errs[result.index] = result.err
+	}
+	if errs[0] != nil && errs[1] != nil {
+		return releaseNotesCatalog{}, fmt.Errorf("Gitee：%v；GitHub：%v", errs[0], errs[1])
+	}
+	sourceNames := make([]string, 0, len(sources))
+	for index, source := range sources {
+		if errs[index] == nil {
+			sourceNames = append(sourceNames, source.Name)
+		}
+	}
+	releases := mergeReleaseNotes(fetched[0], fetched[1])
+	if len(releases) == 0 {
+		return releaseNotesCatalog{}, errors.New("远程仓库没有可显示的正式 Release")
+	}
+	return releaseNotesCatalog{
+		Releases:  releases,
+		Sources:   sourceNames,
+		FetchedAt: time.Now().UnixMilli(),
+	}, nil
+}
+
+func (cache *releaseNotesCache) load(ctx context.Context) (releaseNotesCatalog, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if len(cache.catalog.Releases) > 0 && time.Now().Before(cache.expiresAt) {
+		catalog := cache.catalog
+		catalog.Cached = true
+		return catalog, nil
+	}
+	catalog, err := fetchReleaseNotesCatalog(ctx)
+	if err != nil {
+		return releaseNotesCatalog{}, err
+	}
+	cache.catalog = catalog
+	cache.expiresAt = time.Now().Add(releaseNotesTTL)
+	return catalog, nil
 }
 
 func fetchRelease(ctx context.Context, client *http.Client, source updateSource) (UpdateInfo, error) {

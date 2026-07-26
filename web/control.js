@@ -15,6 +15,7 @@ let hotkeyValues = {openControl:'', openMiniControl:'', nextQueue:'', clearQueue
 let pendingHotkeys = null;
 let updateCandidate = null;
 let updateModalPhase = 'info';
+let updateModalRetry = null;
 let updateReleaseHistory = [];
 let updateRecentReleases = [];
 let updateInstallTarget = '';
@@ -1441,6 +1442,7 @@ function closeUpdateModal() {
   $('updateModal').classList.add('hidden');
   hideUpdateProgressPanel();
   updateCandidate = null;
+  updateModalRetry = null;
   updateModalPhase = 'info';
   configureUpdateReleaseHistory(null);
   $('updateModalSettings').classList.add('hidden');
@@ -1537,13 +1539,14 @@ function setUpdateModalPhase(phase) {
   $('updateModalActions').classList.remove('hidden');
   $('updateLaterBtn').classList.toggle('hidden', !isUpdateAction);
   $('updateLaterBtn').textContent = phase === 'ready' ? '下次启动时更新' : '稍后';
-  $('installUpdateBtn').textContent = phase === 'ready' ? '立即更新' : (phase === 'download' ? '下载更新' : '确认');
+  $('installUpdateBtn').textContent = phase === 'ready' ? '立即更新' : (phase === 'download' ? '下载更新' : (phase === 'retry' ? '重试' : '确认'));
   $('updateLaterBtn').disabled = false;
   $('installUpdateBtn').disabled = false;
 }
 
-function showUpdateModal({title, body, candidate = null, phase = candidate ? 'download' : 'info', showAutoCheck = false, releaseHistory = null}) {
+function showUpdateModal({title, body, candidate = null, phase = candidate ? 'download' : 'info', showAutoCheck = false, releaseHistory = null, retry = null}) {
   updateCandidate = candidate;
+  updateModalRetry = retry;
   $('updateModalTitle').textContent = title;
   configureUpdateReleaseHistory(releaseHistory);
   hideUpdateProgressPanel();
@@ -1558,22 +1561,23 @@ function showUpdateModal({title, body, candidate = null, phase = candidate ? 'do
 async function showLatestReleaseNotes() {
   const button = $('releaseNotesBtn');
   button.disabled = true;
+  showUpdateModal({title:'更新日志', body:'正在读取远程 Release 更新日志…'});
   try {
-    const local = await api('/api/update/notes', {method:'GET'});
+    const catalog = await api('/api/update/notes', {method:'GET'});
     let remote = null;
     try {
       remote = await api('/api/update/check');
     } catch (err) {
       toast(`检查更新失败：${err.message}`);
     }
-    const localReleases = uniqueReleaseEntries(Array.isArray(local.releases) ? local.releases : [{version:local.version, notes:local.notes}]);
-    const currentVersion = releaseVersion(local.version);
-    let currentIndex = localReleases.findIndex(entry => entry.version === currentVersion);
+    const catalogReleases = uniqueReleaseEntries(Array.isArray(catalog.releases) ? catalog.releases : []);
+    const currentVersion = releaseVersion(catalog.version);
+    let currentIndex = catalogReleases.findIndex(entry => entry.version === currentVersion);
     if (currentIndex < 0) currentIndex = 0;
-    const currentRelease = localReleases[currentIndex] || null;
-    const previousRelease = localReleases[currentIndex + 1] || null;
+    const currentRelease = catalogReleases[currentIndex] || null;
+    const previousRelease = catalogReleases[currentIndex + 1] || null;
     const newRelease = remote?.available ? normalizeReleaseEntry({version:remote.version, notes:remote.notes, source:remote.source}) : null;
-    const allReleases = uniqueReleaseEntries([newRelease, ...localReleases].filter(Boolean));
+    const allReleases = uniqueReleaseEntries([newRelease, ...catalogReleases].filter(Boolean));
     const recentReleases = [newRelease, currentRelease, previousRelease].filter(Boolean);
     showUpdateModal({
       title:'更新日志',
@@ -1583,7 +1587,12 @@ async function showLatestReleaseNotes() {
       releaseHistory:{all:allReleases, recent:recentReleases},
     });
   } catch (err) {
-    toast(err.message);
+    showUpdateModal({
+      title:'更新日志',
+      body:`${err.message}\n\n请检查网络连接后重试。`,
+      phase:'retry',
+      retry:showLatestReleaseNotes,
+    });
   } finally {
     button.disabled = false;
   }
@@ -1697,6 +1706,13 @@ async function init() {
 	$('installUpdateBtn').addEventListener('click', async () => {
 		if (updateModalPhase === 'download-progress' || updateModalPhase === 'install-progress' || updateModalPhase === 'install-complete') {
 			closeUpdateModal();
+			return;
+		}
+		if (updateModalPhase === 'retry' && updateModalRetry) {
+			const retry = updateModalRetry;
+			updateModalRetry = null;
+			$('installUpdateBtn').disabled = true;
+			await retry();
 			return;
 		}
 		if (!updateCandidate) {

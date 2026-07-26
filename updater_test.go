@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -171,29 +172,147 @@ func TestExtractUpdateZipRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestLatestEmbeddedReleaseNotesOnlyReturnsFirstSection(t *testing.T) {
-	old := releaseNotesMarkdown
-	releaseNotesMarkdown = "# v2\n\nlatest\n---\n# v1\n\nold"
-	t.Cleanup(func() { releaseNotesMarkdown = old })
-	if got := latestEmbeddedReleaseNotes(); got != "# v2\n\nlatest" {
-		t.Fatalf("unexpected latest notes: %q", got)
+func TestFetchReleaseNotesFiltersAndSorts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "not-a-version", "body": "ignored"},
+			{"tag_name": "v1.5.0", "body": "older", "html_url": serverURL(r) + "/v1.5.0"},
+			{"tag_name": "v2.0.0-test1", "body": "preview", "prerelease": true},
+			{"tag_name": "v2.0.0", "body": "latest", "published_at": "2026-01-02T03:04:05Z"},
+			{"tag_name": "v1.0.0", "body": "draft", "draft": true},
+		})
+	}))
+	defer server.Close()
+
+	got, err := fetchReleaseNotes(context.Background(), server.Client(), updateSource{
+		Name: "test", ReleasesURL: server.URL, PageBase: server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(fetchReleaseNotes())=%d want=2: %#v", len(got), got)
+	}
+	if got[0].Version != "2.0.0" || got[0].Notes != "latest" || got[0].Source != "test" {
+		t.Fatalf("unexpected latest release: %#v", got[0])
+	}
+	if got[1].Version != "1.5.0" || got[1].PageURL != server.URL+"/v1.5.0" {
+		t.Fatalf("unexpected older release: %#v", got[1])
 	}
 }
 
-func TestEmbeddedReleaseNotesReturnsVersionedHistory(t *testing.T) {
-	old := releaseNotesMarkdown
-	releaseNotesMarkdown = "# BiliQueue v2.0.0\n\nlatest\n---\n## BiliQueue v1.5.0\n\nold\n---\nnotes without a version"
-	t.Cleanup(func() { releaseNotesMarkdown = old })
+func TestMergeReleaseNotesPrefersGiteeAndFillsHistoryFromGitHub(t *testing.T) {
+	gitee := []releaseNote{
+		{Version: "2.0.0", Notes: "Gitee latest", Source: "Gitee"},
+		{Version: "1.0.0", Notes: "Gitee oldest", Source: "Gitee"},
+	}
+	github := []releaseNote{
+		{Version: "2.0.0", Notes: "GitHub latest", Source: "GitHub"},
+		{Version: "1.5.0", Notes: "GitHub middle", Source: "GitHub"},
+	}
+	got := mergeReleaseNotes(gitee, github)
+	if len(got) != 3 {
+		t.Fatalf("len(mergeReleaseNotes())=%d want=3: %#v", len(got), got)
+	}
+	if got[0].Version != "2.0.0" || got[0].Notes != "Gitee latest" || got[0].Source != "Gitee" {
+		t.Fatalf("primary source was not preferred: %#v", got[0])
+	}
+	if got[1].Version != "1.5.0" || got[1].Source != "GitHub" || got[2].Version != "1.0.0" {
+		t.Fatalf("fallback history was not merged and sorted: %#v", got)
+	}
+}
 
-	got := embeddedReleaseNotes()
-	if len(got) != 2 {
-		t.Fatalf("len(embeddedReleaseNotes())=%d want=2", len(got))
+func TestReleaseNotesCacheAvoidsRepeatedFetches(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "v2.0.0", "body": "notes"}})
+	}))
+	defer server.Close()
+
+	oldGitee, oldGitHub := giteeReleasesURL, githubReleasesURL
+	giteeReleasesURL, githubReleasesURL = server.URL, server.URL
+	t.Cleanup(func() {
+		giteeReleasesURL, githubReleasesURL = oldGitee, oldGitHub
+	})
+
+	var cache releaseNotesCache
+	first, err := cache.load(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got[0].Version != "2.0.0" || got[0].Notes != "latest" {
-		t.Fatalf("unexpected latest release: %#v", got[0])
+	second, err := cache.load(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got[1].Version != "1.5.0" || got[1].Notes != "old" {
-		t.Fatalf("unexpected previous release: %#v", got[1])
+	if first.Cached || !second.Cached {
+		t.Fatalf("unexpected cache flags: first=%v second=%v", first.Cached, second.Cached)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("requests=%d want=2 (one request per source on first load)", requests.Load())
+	}
+}
+
+func TestFetchReleaseNotesCatalogUsesGitHubFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/gitee" {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "v2.0.0", "body": "GitHub fallback"},
+		})
+	}))
+	defer server.Close()
+
+	oldGitee, oldGitHub := giteeReleasesURL, githubReleasesURL
+	giteeReleasesURL, githubReleasesURL = server.URL+"/gitee", server.URL+"/github"
+	t.Cleanup(func() {
+		giteeReleasesURL, githubReleasesURL = oldGitee, oldGitHub
+	})
+
+	catalog, err := fetchReleaseNotesCatalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Releases) != 1 || catalog.Releases[0].Source != "GitHub" {
+		t.Fatalf("unexpected fallback catalog: %#v", catalog)
+	}
+	if len(catalog.Sources) != 1 || catalog.Sources[0] != "GitHub" {
+		t.Fatalf("unexpected successful sources: %#v", catalog.Sources)
+	}
+}
+
+func TestUpdateNotesRouteUsesRemoteReleaseCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "v2.0.0", "body": "remote release notes"},
+		})
+	}))
+	defer server.Close()
+
+	oldGitee, oldGitHub := giteeReleasesURL, githubReleasesURL
+	giteeReleasesURL, githubReleasesURL = server.URL, server.URL
+	t.Cleanup(func() {
+		giteeReleasesURL, githubReleasesURL = oldGitee, oldGitHub
+	})
+
+	a := newApp(t.TempDir())
+	request := httptest.NewRequest(http.MethodGet, "/api/update/notes", nil)
+	response := httptest.NewRecorder()
+	a.routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Version  string        `json:"version"`
+		Releases []releaseNote `json:"releases"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Version != version || len(payload.Releases) != 1 || payload.Releases[0].Notes != "remote release notes" {
+		t.Fatalf("unexpected update notes payload: %#v", payload)
 	}
 }
 

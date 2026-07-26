@@ -241,9 +241,10 @@ type App struct {
 	messageSeq           atomic.Uint64
 	updateCheckMu        sync.Mutex
 	updateInstallMu      sync.Mutex
+	releaseNotes         releaseNotesCache
 }
 
-const version = "0.2.1"
+const version = "0.2.2"
 
 // buildProfile is set only for local-purpose builds through -ldflags -X.
 var buildProfile string
@@ -1612,10 +1613,19 @@ func (a *App) routes() http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		catalog, err := a.releaseNotes.load(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "读取远程更新日志失败：" + err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"version":  version,
-			"notes":    latestEmbeddedReleaseNotes(),
-			"releases": embeddedReleaseNotes(),
+			"version":   version,
+			"releases":  catalog.Releases,
+			"sources":   catalog.Sources,
+			"fetchedAt": catalog.FetchedAt,
+			"cached":    catalog.Cached,
 		})
 	})
 	mux.HandleFunc("/api/update/check", func(w http.ResponseWriter, r *http.Request) {
